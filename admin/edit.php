@@ -40,8 +40,10 @@ $flash = get_flash();
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 .header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #1f2937}
 .header a{color:#e5e7eb;text-decoration:none}
-.container{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 54px)}
-.panel{background:var(--panel);height:100%;display:flex;flex-direction:column;position:relative}
+.container{display:flex;height:calc(100vh - 54px);overflow:hidden}
+.panel{background:var(--panel);height:100%;display:flex;flex-direction:column;position:relative;min-width:200px}
+.resizer{width:6px;background:#0b1220;cursor:col-resize;flex-shrink:0;border-left:1px solid #1f2937;border-right:1px solid #1f2937;transition:background 0.2s}
+.resizer:hover,.resizer.active{background:#3b82f6}
 .toolbar{padding:10px;border-bottom:1px solid #1f2937;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{padding:6px 10px;border-radius:8px;border:1px solid #1f2937;background:#111827;color:#e5e7eb;text-decoration:none;font-size:13px;cursor:pointer}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
@@ -67,8 +69,8 @@ iframe{flex:1;border:0;background:#ffffff}
     </form>
   </div>
 </header>
-<div class="container">
-  <div class="panel">
+<div class="container" id="container">
+  <div class="panel" id="leftPanel" style="width:50%">
     <div class="toolbar">
       <?php if ($mode === 'xml'): ?>
       <button class="btn" type="button" onclick="wrapTag('paragraph')">Paragraph</button>
@@ -83,7 +85,8 @@ iframe{flex:1;border:0;background:#ffffff}
     <?php if ($flash): ?><div class="flash"><?=htmlspecialchars($flash['m'])?></div><?php endif; ?>
     <textarea id="editor" spellcheck="false"><?=htmlspecialchars($content)?></textarea>
   </div>
-  <div class="panel">
+  <div class="resizer" id="resizer"></div>
+  <div class="panel" style="flex:1">
     <div class="toolbar">
       <span class="small">Aperçu</span>
       <button class="btn" type="button" onclick="refreshPreview()">Rafraîchir</button>
@@ -162,5 +165,37 @@ function saveContent(){
 }
 
 refreshPreview();
+
+// Resizer
+const resizer = document.getElementById('resizer');
+const leftPanel = document.getElementById('leftPanel');
+const container = document.getElementById('container');
+let isResizing = false;
+
+resizer.addEventListener('mousedown', (e) => {
+  isResizing = true;
+  document.body.style.cursor = 'col-resize';
+  resizer.classList.add('active');
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isResizing) return;
+  const containerRect = container.getBoundingClientRect();
+  const x = e.clientX - containerRect.left;
+  const widthPercent = (x / containerRect.width) * 100;
+  if (widthPercent > 10 && widthPercent < 90) {
+      leftPanel.style.width = widthPercent + '%';
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (isResizing) {
+    isResizing = false;
+    document.body.style.cursor = 'default';
+    resizer.classList.remove('active');
+    if (easyMDE) easyMDE.codemirror.refresh();
+  }
+});
 </script>
 
