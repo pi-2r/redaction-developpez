@@ -1206,6 +1206,7 @@ class Parsedown
         $Inline['element']['attributes'] += $Link['element']['attributes'];
 
         unset($Inline['element']['attributes']['href']);
+        unset($Inline['element']['attributes']['target']);
 
         return $Inline;
     }
@@ -1248,6 +1249,10 @@ class Parsedown
                 $Element['attributes']['title'] = substr($matches[2], 1, - 1);
             }
 
+            if (strpos($Element['attributes']['href'], 'http') === 0) {
+                $Element['attributes']['target'] = '_blank';
+            }
+
             $extent += strlen($matches[0]);
         }
         else
@@ -1273,6 +1278,10 @@ class Parsedown
 
             $Element['attributes']['href'] = $Definition['url'];
             $Element['attributes']['title'] = $Definition['title'];
+
+            if (strpos($Element['attributes']['href'], 'http') === 0) {
+                $Element['attributes']['target'] = '_blank';
+            }
         }
 
         return array(
@@ -1372,6 +1381,7 @@ class Parsedown
                     'text' => $url,
                     'attributes' => array(
                         'href' => $url,
+                        'target' => '_blank',
                     ),
                 ),
             );
@@ -1393,6 +1403,7 @@ class Parsedown
                     'text' => $url,
                     'attributes' => array(
                         'href' => $url,
+                        'target' => '_blank',
                     ),
                 ),
             );

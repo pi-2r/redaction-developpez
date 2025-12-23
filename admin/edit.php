@@ -41,20 +41,20 @@ $flash = get_flash();
 .header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #1f2937}
 .header a{color:#e5e7eb;text-decoration:none}
 .container{display:flex;height:calc(100vh - 54px);overflow:hidden}
-.panel{background:var(--panel);height:100%;display:flex;flex-direction:column;position:relative;min-width:200px}
-.resizer{width:6px;background:#0b1220;cursor:col-resize;flex-shrink:0;border-left:1px solid #1f2937;border-right:1px solid #1f2937;transition:background 0.2s}
+.panel{background:var(--panel);height:100%;display:flex;flex-direction:column;position:relative;min-width:200px;overflow:hidden}
+.resizer{width:6px;background:#0b1220;cursor:col-resize;flex-shrink:0;border-left:1px solid #1f2937;border-right:1px solid #1f2937;transition:background 0.2s;z-index:10}
 .resizer:hover,.resizer.active{background:#3b82f6}
-.toolbar{padding:10px;border-bottom:1px solid #1f2937;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.toolbar{padding:10px;border-bottom:1px solid #1f2937;display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex-shrink:0}
 .btn{padding:6px 10px;border-radius:8px;border:1px solid #1f2937;background:#111827;color:#e5e7eb;text-decoration:none;font-size:13px;cursor:pointer}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
-textarea{flex:1;border:0;background:#0b1220;color:#e5e7eb;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;padding:12px;line-height:1.5;resize:none}
-iframe{flex:1;border:0;background:#ffffff}
-.flash{margin:10px;padding:10px;border-radius:8px;background:#052e1a;color:#86efac}
+textarea{flex:1;border:0;background:#0b1220;color:#e5e7eb;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;padding:12px;line-height:1.5;resize:none;overflow:auto;min-height:0}
+iframe{flex:1;border:0;background:#ffffff;min-height:0}
+.flash{margin:10px;padding:10px;border-radius:8px;background:#052e1a;color:#86efac;flex-shrink:0}
 .small{color:#9ca3af;font-size:12px}
 /* EasyMDE overrides */
-.EasyMDEContainer{background:#fff;color:#333;flex:1;display:flex;flex-direction:column}
-.CodeMirror{flex:1;border:0;border-radius:0}
-.editor-toolbar{border-color:#ddd;border-radius:0}
+.EasyMDEContainer{background:#fff;color:#333;flex:1;display:flex;flex-direction:column;min-height:0}
+.CodeMirror{flex:1;border:0;border-radius:0;min-height:0;height:100%!important}
+.editor-toolbar{border-color:#ddd;border-radius:0;flex-shrink:0}
 .editor-statusbar{display:none}
 </style>
 <header class="header">
