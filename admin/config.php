@@ -49,5 +49,11 @@ date_default_timezone_set($TIMEZONE);
 ini_set('default_charset','UTF-8');
 if (function_exists('mb_internal_encoding')) { @mb_internal_encoding('UTF-8'); }
 
+// Configuration par défaut pour les articles
+$DEFAULT_AUTHOR = 'Pierre Therrode';
+$DEFAULT_LICENSE = '2';
+$DEFAULT_RUBRIC = 40;
+$WEBSITE_ROOT_URL = 'https://thpierre.developpez.com/';
+
 $FORCE_DIR_MODE = 0775; // mode souhaité pour dossiers
 $FORCE_FILE_MODE = 0664; // mode souhaité pour fichiers

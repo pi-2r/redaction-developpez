@@ -151,7 +151,8 @@ function write_file_atomic($path, $content) {
 function xml_skeleton($title, $author='') {
     $date = date('Y-m-d');
     $titlePage = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
-    $author = htmlspecialchars($author ? $author : (isset($_SESSION['user'])?$_SESSION['user']:''), ENT_QUOTES, 'UTF-8');
+    $defaultAuthor = isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : '';
+    $author = htmlspecialchars($author ? $author : (isset($_SESSION['user'])?$_SESSION['user']:$defaultAuthor), ENT_QUOTES, 'UTF-8');
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<document>\n  <entete>\n    <titre>\n      <page>{$titlePage}</page>\n      <article>{$titlePage}</article>\n    </titre>\n    <date>{$date}</date>\n    <licauteur>{$author}</licauteur>\n  </entete>\n  <summary>\n    <section id=\"1\">\n      <title>Introduction</title>\n      <paragraph>Commencez ici…</paragraph>\n    </section>\n  </summary>\n</document>\n";
 }
 function xslt_transform_to_html($xmlPath) {
@@ -220,19 +221,24 @@ function generate_index_php($type, $slug) {
             $processedHtml .= $dom->saveHTML($child);
         }
 
-        $author = isset($_SESSION['user']) ? $_SESSION['user'] : 'Anonyme';
+        $author = isset($_SESSION['user']) ? $_SESSION['user'] : (isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : 'Anonyme');
         $date = date('d F Y');
         $year = date('Y');
         $desc = $title;
-        $url = "https://www.developpez.com/$type/$slug/";
+
+        $rootUrl = isset($GLOBALS['WEBSITE_ROOT_URL']) ? rtrim($GLOBALS['WEBSITE_ROOT_URL'], '/') : 'https://www.developpez.com';
+        $url = $rootUrl . "/$type/$slug/";
+
+        $defaultRubric = isset($GLOBALS['DEFAULT_RUBRIC']) ? $GLOBALS['DEFAULT_RUBRIC'] : 40;
+        $defaultLicense = isset($GLOBALS['DEFAULT_LICENSE']) ? $GLOBALS['DEFAULT_LICENSE'] : '2';
 
         $php = "<?php\n";
         $php .= "include \$_SERVER['DOCUMENT_ROOT'].\"/template/fonctions.php\";\n\n";
-        $php .= "\$rubrique = 40;\n";
+        $php .= "\$rubrique = $defaultRubric;\n";
         $php .= "\$meta_description = \"" . addslashes($desc) . "\";\n";
         $php .= "\$titre_page = \"" . addslashes($title) . "\";\n";
         $php .= "\$Auteur = \"" . addslashes($author) . "\";\n";
-        $php .= "\$Licence = \"2\";\n";
+        $php .= "\$Licence = \"$defaultLicense\";\n";
         $php .= "\$Annee = \"$year\";\n";
         $php .= "\$dateBrute['date'] = '$date';\n";
         $php .= "\$dateBrute['miseajour'] = ' ';\n";
