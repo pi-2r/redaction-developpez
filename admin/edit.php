@@ -9,14 +9,23 @@ $paths = project_paths($type, $slug);
 $isMd = is_file($paths['md']);
 $isXml = is_file($paths['xml']);
 
-// Si aucun fichier, on suppose qu'on veut créer du Markdown car c'est la nouvelle préférence
-if (!$isMd && !$isXml) {
-    $mode = 'md';
-    $content = "# $slug\n\nCommencez à écrire...";
+$mode = isset($_GET['mode']) ? $_GET['mode'] : '';
+if ($mode !== 'xml' && $mode !== 'md') {
+    // Auto-detect
+    if ($isMd) $mode = 'md';
+    elseif ($isXml) $mode = 'xml';
+    else $mode = 'md';
+}
+
+$content = '';
+if ($mode === 'md') {
+    if ($isMd) {
+        $content = file_get_contents($paths['md']);
+    } else {
+        $content = "# $slug\n\nCommencez à écrire...";
+    }
 } else {
-    // Si MD existe, on l'utilise. Sinon XML.
-    $mode = $isMd ? 'md' : 'xml';
-    $content = $isMd ? file_get_contents($paths['md']) : file_get_contents($paths['xml']);
+    $content = file_get_contents($paths['xml']);
 }
 if ($content === false) $content = '';
 
@@ -24,20 +33,27 @@ $flash = get_flash();
 ?><!doctype html>
 <meta charset="utf-8">
 <title>Éditer - <?=$slug?></title>
+<link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
+<script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
 <style>
 :root{--bg:#0b1220;--panel:#0f172a;--muted:#9ca3af;--primary:#3b82f6}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#e5e7eb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
 .header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #1f2937}
 .header a{color:#e5e7eb;text-decoration:none}
 .container{display:grid;grid-template-columns:1fr 1fr;gap:0;height:calc(100vh - 54px)}
-.panel{background:var(--panel);height:100%;display:flex;flex-direction:column}
-.toolbar{padding:10px;border-bottom:1px solid #1f2937;display:flex;gap:8px;flex-wrap:wrap}
+.panel{background:var(--panel);height:100%;display:flex;flex-direction:column;position:relative}
+.toolbar{padding:10px;border-bottom:1px solid #1f2937;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{padding:6px 10px;border-radius:8px;border:1px solid #1f2937;background:#111827;color:#e5e7eb;text-decoration:none;font-size:13px;cursor:pointer}
 .btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
 textarea{flex:1;border:0;background:#0b1220;color:#e5e7eb;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:13px;padding:12px;line-height:1.5;resize:none}
 iframe{flex:1;border:0;background:#ffffff}
 .flash{margin:10px;padding:10px;border-radius:8px;background:#052e1a;color:#86efac}
 .small{color:#9ca3af;font-size:12px}
+/* EasyMDE overrides */
+.EasyMDEContainer{background:#fff;color:#333;flex:1;display:flex;flex-direction:column}
+.CodeMirror{flex:1;border:0;border-radius:0}
+.editor-toolbar{border-color:#ddd;border-radius:0}
+.editor-statusbar{display:none}
 </style>
 <header class="header">
   <div><a href="/admin/">← Retour</a></div>
@@ -57,11 +73,9 @@ iframe{flex:1;border:0;background:#ffffff}
       <?php if ($mode === 'xml'): ?>
       <button class="btn" type="button" onclick="wrapTag('paragraph')">Paragraph</button>
       <button class="btn" type="button" onclick="insertSection()">+ Section</button>
+      <a class="btn" href="?type=<?=$type?>&slug=<?=$slug?>&mode=md">Passer au Markdown</a>
       <?php else: ?>
-      <button class="btn" type="button" onclick="wrapMd('**','**')">Gras</button>
-      <button class="btn" type="button" onclick="wrapMd('*','*')">Italique</button>
-      <button class="btn" type="button" onclick="wrapMd('[','](url)')">Lien</button>
-      <button class="btn" type="button" onclick="wrapMd('\n## ','\n')">H2</button>
+      <!-- EasyMDE has its own toolbar -->
       <?php endif; ?>
       <button class="btn primary" type="button" onclick="saveContent()">Enregistrer</button>
       <span class="small" id="status"></span>
@@ -83,23 +97,43 @@ const ta = document.getElementById('editor');
 const pv = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const mode = '<?=$mode?>';
+let easyMDE = null;
 let saveTimer;
 
-ta.addEventListener('input', ()=>{
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(refreshPreview, 500);
-});
+if (mode === 'md') {
+    easyMDE = new EasyMDE({
+        element: ta,
+        spellChecker: false,
+        autosave: { enabled: false },
+        toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "image", "|", "guide"],
+        status: false
+    });
+    easyMDE.codemirror.on("change", () => {
+        ta.value = easyMDE.value();
+        triggerPreview();
+    });
+} else {
+    ta.addEventListener('input', triggerPreview);
+}
+
+function triggerPreview(){
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(refreshPreview, 500);
+}
 
 function refreshPreview(){
+  const val = easyMDE ? easyMDE.value() : ta.value;
   const body = new FormData();
-  body.append(mode, ta.value);
+  body.append(mode, val);
   fetch('/admin/preview.php', {method:'POST', body}).then(r=>r.text()).then(html=>{
     const doc = pv.contentDocument || pv.contentWindow.document;
     doc.open(); doc.write(html); doc.close();
   }).catch(()=>{});
 }
 
+// XML helpers
 function wrapTag(tag){
+  if(mode==='md') return;
   const s = ta.selectionStart, e = ta.selectionEnd;
   const before = ta.value.slice(0,s); const sel = ta.value.slice(s,e); const after = ta.value.slice(e);
   const wrapped = `<${tag}>${sel||'Texte...'}</${tag}>`;
@@ -108,26 +142,20 @@ function wrapTag(tag){
   refreshPreview();
 }
 function insertSection(){
+  if(mode==='md') return;
   const tpl = `\n  <section id="X">\n    <title>Titre</title>\n    <paragraph>Texte...</paragraph>\n  </section>\n`;
   const s = ta.selectionStart; const before = ta.value.slice(0,s); const after = ta.value.slice(s);
   ta.value = before + tpl + after; ta.focus(); ta.selectionStart = s; ta.selectionEnd = s + tpl.length; refreshPreview();
 }
 
-function wrapMd(start, end){
-  const s = ta.selectionStart, e = ta.selectionEnd;
-  const before = ta.value.slice(0,s); const sel = ta.value.slice(s,e); const after = ta.value.slice(e);
-  ta.value = before + start + sel + end + after;
-  ta.focus(); ta.selectionStart = s + start.length; ta.selectionEnd = s + start.length + sel.length;
-  refreshPreview();
-}
-
 function saveContent(){
   statusEl.textContent = 'Enregistrement...';
+  const val = easyMDE ? easyMDE.value() : ta.value;
   const body = new FormData();
   body.append('csrf', '<?=htmlspecialchars(csrf_token())?>');
   body.append('type', '<?=htmlspecialchars($type)?>');
   body.append('slug', '<?=htmlspecialchars($slug)?>');
-  body.append(mode, ta.value);
+  body.append(mode, val);
   fetch('/admin/save.php', {method:'POST', body}).then(r=>r.json()).then(j=>{
     statusEl.textContent = j.ok ? 'Sauvegardé' : 'Erreur: ' + (j.error||'');
   }).catch(()=>{statusEl.textContent='Erreur réseau';});
