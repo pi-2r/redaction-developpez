@@ -19,6 +19,7 @@ if (!function_exists('random_bytes')) {
     }
 }
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/Parsedown.php';
 
 // -------- Session & Auth --------
 function ensure_session() {
@@ -107,17 +108,20 @@ function type_dir($type) {
 function project_paths($type, $slug) {
     $base = rtrim(type_dir($type), '/') . '/' . $slug;
     $xml = $base . '/' . $slug . '.xml';
-    if (!is_file($xml) && is_dir($base)) {
+    $md = $base . '/' . $slug . '.md';
+    if (!is_file($xml) && !is_file($md) && is_dir($base)) {
         $scan = scandir($base); if ($scan) {
             foreach ($scan as $f) {
                 if ($f === '.' || $f === '..') continue;
-                if (ends_with(strtolower($f), '.xml')) { $xml = $base . '/' . $f; break; }
+                if (ends_with(strtolower($f), '.xml')) { $xml = $base . '/' . $f; }
+                if (ends_with(strtolower($f), '.md')) { $md = $base . '/' . $f; }
             }
         }
     }
     return array(
         'dir' => $base,
         'xml' => $xml,
+        'md' => $md,
         'index' => $base . '/index.php',
     );
 }
@@ -160,18 +164,39 @@ function xslt_transform_to_html($xmlPath) {
     $html = $proc->transformToXML($dom);
     return $html ? $html : '<!doctype html><meta charset="utf-8"><p>Erreur de transformation XSL.</p>';
 }
+function markdown_to_html($mdPath) {
+    if (!is_file($mdPath)) return '<!doctype html><meta charset="utf-8"><p>Fichier Markdown introuvable</p>';
+    $text = file_get_contents($mdPath);
+    $pd = new Parsedown();
+    $body = $pd->text($text);
+    return "<!doctype html>\n<meta charset=\"utf-8\">\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\n" . $body;
+}
 function generate_index_php($type, $slug) {
     $paths = project_paths($type, $slug);
+    if (is_file($paths['md'])) {
+        $relMd = basename($paths['md']);
+        return "<?php\nrequire_once __DIR__ . '/../../admin/Parsedown.php';\n\$md = __DIR__ . '/{$relMd}';\nif (!is_file(\$md)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$pd = new Parsedown();\necho \"<!doctype html>\\n<meta charset=\\\"utf-8\\\">\\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\\n\";\necho \$pd->text(file_get_contents(\$md));\n";
+    }
     $relXml = basename($paths['xml']);
-    return "<?php\nheader('Content-Type: text/html; charset=utf-8');\n$xml = __DIR__ . '/{$relXml}';\n$xsl = __DIR__ . '/../../admin/xsl/default.xsl';\nif (!is_file($xml) || !is_file($xsl)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n$dom = new DOMDocument();\n$dom->load($xml);\n$x = new DOMDocument();\n$x->load($xsl);\n$p = new XSLTProcessor();\n$p->importStylesheet($x);\necho $p->transformToXML($dom);\n";
+    return "<?php\nheader('Content-Type: text/html; charset=utf-8');\n\$xml = __DIR__ . '/{$relXml}';\n\$xsl = __DIR__ . '/../../admin/xsl/default.xsl';\nif (!is_file(\$xml) || !is_file(\$xsl)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$dom = new DOMDocument();\n\$dom->load(\$xml);\n\$x = new DOMDocument();\n\$x->load(\$xsl);\n\$p = new XSLTProcessor();\n\$p->importStylesheet(\$x);\necho \$p->transformToXML(\$dom);\n";
 }
 // -------- Publication --------
 function publish_all_formats($type, $slug) {
     global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
     $dir = $paths['dir'];
-    $xml = $paths['xml'];
-    $html = xslt_transform_to_html($xml);
+
+    $sourceFile = '';
+    if (is_file($paths['md'])) {
+        $html = markdown_to_html($paths['md']);
+        $sourceFile = $paths['md'];
+    } elseif (is_file($paths['xml'])) {
+        $html = xslt_transform_to_html($paths['xml']);
+        $sourceFile = $paths['xml'];
+    } else {
+        return array('error' => 'Aucun fichier source (XML ou MD) trouvé');
+    }
+
     $htmlPath = $dir . '/_build.html';
     file_put_contents($htmlPath, $html);
     write_file_atomic($paths['index'], generate_index_php($type, $slug));
@@ -197,7 +222,7 @@ function publish_all_formats($type, $slug) {
         $zipFile = $dir . '/' . $slug . '.zip';
         $zip = new ZipArchive();
         if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
-            if (is_file($xml)) $zip->addFile($xml, basename($xml));
+            if (is_file($sourceFile)) $zip->addFile($sourceFile, basename($sourceFile));
             foreach (array('pdf','epub','mobi','azw') as $fmt) {
                 $fp = $dir . '/' . $slug . '.' . $fmt;
                 if (is_file($fp)) $zip->addFile($fp, basename($fp));

@@ -5,8 +5,21 @@ $type = (isset($_GET['type']) ? $_GET['type'] : 'tutoriels') === 'articles' ? 'a
 $slug = clean_path_param((string)(isset($_GET['slug']) ? $_GET['slug'] : ''));
 if ($slug === '') { set_flash('Projet introuvable', 'error'); header('Location: /admin/'); exit; }
 $paths = project_paths($type, $slug);
-if (!is_file($paths['xml'])) { set_flash('Fichier XML introuvable', 'error'); header('Location: /admin/'); exit; }
-$xml = file_get_contents($paths['xml']); if ($xml === false) $xml = '';
+
+$isMd = is_file($paths['md']);
+$isXml = is_file($paths['xml']);
+
+// Si aucun fichier, on suppose qu'on veut créer du Markdown car c'est la nouvelle préférence
+if (!$isMd && !$isXml) {
+    $mode = 'md';
+    $content = "# $slug\n\nCommencez à écrire...";
+} else {
+    // Si MD existe, on l'utilise. Sinon XML.
+    $mode = $isMd ? 'md' : 'xml';
+    $content = $isMd ? file_get_contents($paths['md']) : file_get_contents($paths['xml']);
+}
+if ($content === false) $content = '';
+
 $flash = get_flash();
 ?><!doctype html>
 <meta charset="utf-8">
@@ -28,7 +41,7 @@ iframe{flex:1;border:0;background:#ffffff}
 </style>
 <header class="header">
   <div><a href="/admin/">← Retour</a></div>
-  <div><?=$type?> / <strong><?=$slug?></strong></div>
+  <div><?=$type?> / <strong><?=$slug?></strong> <span class="small">(<?=$mode?>)</span></div>
   <div>
     <form style="display:inline" method="post" action="/admin/publish.php">
       <input type="hidden" name="csrf" value="<?=htmlspecialchars(csrf_token())?>">
@@ -41,13 +54,20 @@ iframe{flex:1;border:0;background:#ffffff}
 <div class="container">
   <div class="panel">
     <div class="toolbar">
+      <?php if ($mode === 'xml'): ?>
       <button class="btn" type="button" onclick="wrapTag('paragraph')">Paragraph</button>
       <button class="btn" type="button" onclick="insertSection()">+ Section</button>
-      <button class="btn primary" type="button" onclick="saveXml()">Enregistrer</button>
+      <?php else: ?>
+      <button class="btn" type="button" onclick="wrapMd('**','**')">Gras</button>
+      <button class="btn" type="button" onclick="wrapMd('*','*')">Italique</button>
+      <button class="btn" type="button" onclick="wrapMd('[','](url)')">Lien</button>
+      <button class="btn" type="button" onclick="wrapMd('\n## ','\n')">H2</button>
+      <?php endif; ?>
+      <button class="btn primary" type="button" onclick="saveContent()">Enregistrer</button>
       <span class="small" id="status"></span>
     </div>
     <?php if ($flash): ?><div class="flash"><?=htmlspecialchars($flash['m'])?></div><?php endif; ?>
-    <textarea id="xml" spellcheck="false"><?=htmlspecialchars($xml)?></textarea>
+    <textarea id="editor" spellcheck="false"><?=htmlspecialchars($content)?></textarea>
   </div>
   <div class="panel">
     <div class="toolbar">
@@ -59,9 +79,10 @@ iframe{flex:1;border:0;background:#ffffff}
   </div>
 </div>
 <script>
-const ta = document.getElementById('xml');
+const ta = document.getElementById('editor');
 const pv = document.getElementById('preview');
 const statusEl = document.getElementById('status');
+const mode = '<?=$mode?>';
 let saveTimer;
 
 ta.addEventListener('input', ()=>{
@@ -71,7 +92,7 @@ ta.addEventListener('input', ()=>{
 
 function refreshPreview(){
   const body = new FormData();
-  body.append('xml', ta.value);
+  body.append(mode, ta.value);
   fetch('/admin/preview.php', {method:'POST', body}).then(r=>r.text()).then(html=>{
     const doc = pv.contentDocument || pv.contentWindow.document;
     doc.open(); doc.write(html); doc.close();
@@ -92,13 +113,21 @@ function insertSection(){
   ta.value = before + tpl + after; ta.focus(); ta.selectionStart = s; ta.selectionEnd = s + tpl.length; refreshPreview();
 }
 
-function saveXml(){
+function wrapMd(start, end){
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  const before = ta.value.slice(0,s); const sel = ta.value.slice(s,e); const after = ta.value.slice(e);
+  ta.value = before + start + sel + end + after;
+  ta.focus(); ta.selectionStart = s + start.length; ta.selectionEnd = s + start.length + sel.length;
+  refreshPreview();
+}
+
+function saveContent(){
   statusEl.textContent = 'Enregistrement...';
   const body = new FormData();
   body.append('csrf', '<?=htmlspecialchars(csrf_token())?>');
   body.append('type', '<?=htmlspecialchars($type)?>');
   body.append('slug', '<?=htmlspecialchars($slug)?>');
-  body.append('xml', ta.value);
+  body.append(mode, ta.value);
   fetch('/admin/save.php', {method:'POST', body}).then(r=>r.json()).then(j=>{
     statusEl.textContent = j.ok ? 'Sauvegardé' : 'Erreur: ' + (j.error||'');
   }).catch(()=>{statusEl.textContent='Erreur réseau';});
@@ -106,3 +135,4 @@ function saveXml(){
 
 refreshPreview();
 </script>
+

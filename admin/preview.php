@@ -1,8 +1,16 @@
 <?php
 require_once __DIR__ . '/utils.php';
 require_login();
+
+if (isset($_POST['md'])) {
+    $pd = new Parsedown();
+    $html = $pd->text($_POST['md']);
+    echo '<!doctype html><meta charset="utf-8"><style>body{font-family:system-ui;background:#fff;color:#111;padding:20px;max-width:800px;margin:0 auto}img{max-width:100%}</style>' . $html;
+    exit;
+}
+
 $raw = (string)(isset($_POST['xml']) ? $_POST['xml'] : '');
-if ($raw === '') { http_response_code(400); echo '<p>XML vide</p>'; exit; }
+if ($raw === '') { http_response_code(400); echo '<p>Contenu vide</p>'; exit; }
 libxml_use_internal_errors(true);
 $dom = new DOMDocument();
 if (!$dom->loadXML($raw, LIBXML_NOENT | LIBXML_NOCDATA | LIBXML_NONET)) {

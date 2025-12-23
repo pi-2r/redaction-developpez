@@ -19,12 +19,34 @@ $type = ((isset($_POST['type']) ? $_POST['type'] : 'tutoriels') === 'articles') 
 $slug = clean_path_param((string)(isset($_POST['slug']) ? $_POST['slug'] : ''));
 $xml = (string)(isset($_POST['xml']) ? $_POST['xml'] : '');
 
-if ($slug === '' || $xml === '') {
+if ($slug === '') {
     echo json_encode(array('ok'=>false,'error'=>'Paramètres manquants'));
     exit;
 }
 
 $paths = project_paths($type, $slug);
+
+if (isset($_POST['md'])) {
+    $md = (string)$_POST['md'];
+    $target = $paths['md'];
+    if (!$target) $target = $paths['dir'] . '/' . $slug . '.md';
+
+    $backup = $target . '.bak-' . date('Ymd-His');
+    if (is_file($target)) @copy($target, $backup);
+
+    if (!write_file_atomic($target, $md)) {
+        echo json_encode(array('ok'=>false,'error'=>'Échec d’écriture MD'));
+        exit;
+    }
+    echo json_encode(array('ok'=>true));
+    exit;
+}
+
+if ($xml === '') {
+    echo json_encode(array('ok'=>false,'error'=>'Contenu vide'));
+    exit;
+}
+
 if (!is_file($paths['xml'])) {
     echo json_encode(array('ok'=>false,'error'=>'Fichier XML introuvable'));
     exit;
