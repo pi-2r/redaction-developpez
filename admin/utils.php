@@ -174,8 +174,127 @@ function markdown_to_html($mdPath) {
 function generate_index_php($type, $slug) {
     $paths = project_paths($type, $slug);
     if (is_file($paths['md'])) {
-        $relMd = basename($paths['md']);
-        return "<?php\nheader('Content-Type: text/html; charset=utf-8');\nrequire_once __DIR__ . '/../../admin/Parsedown.php';\n\$md = __DIR__ . '/{$relMd}';\nif (!is_file(\$md)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$pd = new Parsedown();\necho \"<!doctype html>\\n<meta charset=\\\"utf-8\\\">\\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\\n\";\necho \$pd->text(file_get_contents(\$md));\n";
+        $mdContent = file_get_contents($paths['md']);
+        $pd = new Parsedown();
+        $html = $pd->text($mdContent);
+
+        $dom = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $dom->loadHTML('<?xml encoding="UTF-8"><div>' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+
+        $xpath = new DOMXPath($dom);
+        $headers = $xpath->query('//h1|//h2|//h3');
+
+        $toc = '<nav class="nav-sommaire" role="navigation">
+            <h2 class="TitreHeader ToggleGecko">Table des mati&egrave;res<img class="ToggleImgPlier" title="Plier" alt="Plier" src="/template/kit/fleche-haut-bleue.png"/><img class="ToggleImgDeplier" title="Déplier" alt="Déplier" src="/template/kit/fleche-bas-bleue.png" style="display:none;"/></h2>
+            <ul id="nav_sommaire_ul_principal" class="nav-sommaire-ul">';
+
+        $hCount = 0;
+        $title = 'Titre inconnu';
+
+        foreach ($headers as $header) {
+            if ($header->tagName === 'h1' && $hCount === 0) {
+                $title = $header->textContent;
+                $hCount++;
+                continue;
+            }
+            $id = 'header-' . $hCount;
+            $header->setAttribute('id', $id);
+
+            $a = $dom->createElement('a');
+            $a->setAttribute('class', 'HautPage');
+            $a->setAttribute('href', '#');
+            $a->setAttribute('title', 'Haut de page');
+            $a->nodeValue = '▲';
+            $header->appendChild($a);
+
+            $toc .= '<li><a class="summaryIndent0" href="#' . $id . '">' . htmlspecialchars($header->textContent) . '</a></li>';
+            $hCount++;
+        }
+        $toc .= '</ul></nav>';
+
+        $bodyDiv = $dom->getElementsByTagName('div')->item(0);
+        $processedHtml = '';
+        foreach ($bodyDiv->childNodes as $child) {
+            $processedHtml .= $dom->saveHTML($child);
+        }
+
+        $author = isset($_SESSION['user']) ? $_SESSION['user'] : 'Anonyme';
+        $date = date('d F Y');
+        $year = date('Y');
+        $desc = $title;
+        $url = "https://www.developpez.com/$type/$slug/";
+
+        $php = "<?php\n";
+        $php .= "include \$_SERVER['DOCUMENT_ROOT'].\"/template/fonctions.php\";\n\n";
+        $php .= "\$rubrique = 40;\n";
+        $php .= "\$meta_description = \"" . addslashes($desc) . "\";\n";
+        $php .= "\$titre_page = \"" . addslashes($title) . "\";\n";
+        $php .= "\$Auteur = \"" . addslashes($author) . "\";\n";
+        $php .= "\$Licence = \"2\";\n";
+        $php .= "\$Annee = \"$year\";\n";
+        $php .= "\$dateBrute['date'] = '$date';\n";
+        $php .= "\$dateBrute['miseajour'] = ' ';\n";
+        $php .= "\$topicType = 'Whitepaper';\n";
+        $php .= "\$GoogleAnalytics = \"\";\n";
+        $php .= "\$gabarit_mobile = true;\n";
+        $php .= "\$gabarit_encodage = 'UTF-8';\n";
+        $php .= "\$gabarit_jquery = '3.4.1';\n";
+        $php .= "\$gabarit_doctype = 'html5';\n";
+        $php .= "\$gabarit_extrahead = \"\\t<!--[if IE 9]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie9.css\\\" /><![endif]-->\\n\"\n";
+        $php .= "    . \"\\t<!--[if IE 8]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie8.css\\\" /><![endif]-->\\n\"\n";
+        $php .= "    . \"\\t<!--[if lt IE 9]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie.css\\\" /><![endif]-->\\n\"\n";
+        $php .= "    . \"\\t<!--[if IE 7]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie7.css\\\" /><![endif]-->\\n\"\n";
+        $php .= "    . \"\\t<!--[if lte IE 6]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie6.css\\\" /><![endif]-->\\n\"\n";
+        $php .= "    . \"\\t<!--[if lt IE 9]><script type=\\\"text/javascript\\\" src=\\\"/template/kit/html5_ie.js\\\"></script><![endif]-->\\n\";\n\n";
+
+        $php .= "\$gabarit_js = array('/template/kit/developpez-kit-generation.js', '/template/kit/lightbox.js', '/template/kit/fonctions-kit.js');\n";
+        $php .= "\$gabarit_css = array('/template/kit/developpez-kit-generation.css', '/template/kit/code.css', '/template/kit/lightbox.css');\n";
+
+        $php .= "\$open_graph_meta = array('type'=>'article', 'title'=>\"" . addslashes($title) . "\", 'image'=>'https://www.developpez.com/template/images/logo.png', 'url'=>\"$url\", 'locale'=>'fr_FR', 'site_name'=>'Developpez.com');\n";
+        $php .= "\$twitter_meta = array('card'=>'summary', 'url'=>\"$url\", 'description'=>\"" . addslashes($desc) . "\", 'title'=>\"" . addslashes($title) . "\", 'image'=>'https://www.developpez.com/template/images/logo.png');\n\n";
+
+        $php .= <<<'EOD'
+function insertion_tag( $MaDate, $tag ) { if ( empty($MaDate) ) { return; } list($annee, $mois, $jour) = explode('-', $MaDate); if ( empty($annee) or empty($mois) or empty($jour) ) { return; } $time_balise = mktime(0,0,0,$mois,$jour,$annee); $time_jour = time(); $delai = 15 * 24 * 60 * 60; if ( ($time_jour - $time_balise) < $delai ) { if ( $tag == "new" ) { return '<script type="text/javascript">document.write(" <span class=\'sommaireQuestionNouveau\'>[Nouveau]</span>");</script>'; } elseif ( $tag == "maj" ) { return '<script type="text/javascript">document.write(" <span class=\'sommaireQuestionAJour\'>[Mise &agrave; jour]</span>");</script>'; } } return; }
+function CutName($vTxt, $Car) { while(strlen($vTxt) > $Car) return substr($vTxt, 0, $Car) . "..."; return $vTxt; }
+function unichr($u) { if ( intval($u) >= 127 && intval($u) <= 159 ) { return chr($u - 127 + 32); } return mb_convert_encoding('&#' . intval($u) . ';', 'UTF-8', 'HTML-ENTITIES'); }
+function new_crypt($phrase) { $key = "le_club_des_developeur"; $output = ""; for ($c = 0 ; $c < strlen($phrase) ; $c++) { $output = $output.unichr(ord($phrase{$c}) + ord($key{$c % strlen($key)})); } return $output; }
+function VerifierAdresseMail($email) { $Syntaxe='#^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,6}$#'; if ( preg_match($Syntaxe,$email) ) { return true; } else { return false; } }
+function RetournerMailOuAutre($message) { if ( VerifierAdresseMail($message) ) { return 'contact'; } else { return $message; } }
+function encrypt_email($email, $texte, $titre="") { if (preg_match("/^mailto:/i", $email)) { $email_parts = explode('mailto:', $email); $email = $email_parts[1]; } $email_parts = explode('@', $email); $javascript = "<script type=\"text/javascript\">\n"; $javascript .= "<!--\n"; $javascript .= "Ch=new Array(4);Res=new Array(4);\n"; $javascript .= "Ch[0]='le_club_des_developeur';"; $javascript .= "Ch[1]='" . new_crypt("mailto") . "';\n"; $javascript .= "Ch[2]='" . new_crypt($email_parts{0} . "@") . "';"; $javascript .= "Ch[3]='" . new_crypt($email_parts{1}) . "';\n"; $javascript .= "for(y=1;y<4;y++){Res[y]=\"\";for(x=0;x<Ch[y].length;x++)\n"; $javascript .= "{"; $javascript .= "cryptChar = Ch[y].charCodeAt(x);\n"; $javascript .= "if (cryptChar >= 32 && cryptChar <= 64 )\n"; $javascript .= "cryptChar = cryptChar-32+127;\n"; $javascript .= "Res[y]+=String.fromCharCode(cryptChar-Ch[0].charCodeAt(x%Ch[0].length));}"; $javascript .= "}\n"; $javascript .= "var st = '<a class=\"'"; if ( $titre != '' ) { $javascript .= " + ' tooltip blue-tooltip' "; } $javascript .= " + ' lienArticle mailto\"' "; $javascript .= " + 'href=\"' + Res[1] + ':' + Res[2] + Res[3] + '\"' "; $javascript .= " + '>'"; $javascript .= " + " . "'" . RetournerMailOuAutre( addslashes($texte) ) . "'"; if ( $titre != '' ) { $javascript .= " + '<span>" . RetournerMailOuAutre($titre) . "</span>' "; } $javascript .= " + '<\/a>'"; $javascript .= ";\n"; $javascript .= "document.write(st);\n"; $javascript .= "//-->\n"; $javascript .= "</script>"; return $javascript; }
+function web_to_mobile($video) { return preg_replace('/http:\/\/www\.youtube\.com/', 'http://m.youtube.com', $video); }
+EOD;
+        $php .= "\n\ninclude(\$_SERVER['DOCUMENT_ROOT'] . '/template/entete.php');\n?>\n";
+
+        $php .= "<article class=\"ArticleComplet\" itemscope itemtype=\"https://schema.org/Article\">\n";
+        $php .= "    <meta itemprop=\"genre\" content=\"informatique\"/>\n";
+        $php .= "    <meta itemprop=\"inLanguage\" content=\"fr-FR\"/>\n";
+        $php .= "    <h1 class=\"titre-article\" itemprop=\"name\">" . htmlspecialchars($title) . "</h1><section>\n\n";
+        $php .= "        " . $toc . "\n\n";
+        $php .= "        <div class=\"contenu\">\n\n";
+        $php .= "            <section itemprop=\"about\" class=\"SectionSynopsis\">\n";
+        $php .= "                <p>" . htmlspecialchars($desc) . "</p>\n";
+        $php .= "                <p class=\"TextNbrVues\">Article lu <span id=\"NbrVues\">&nbsp;</span> fois.</p></section><div class=\"InfoAuthArtBook\">\n";
+        $php .= "                <section class=\"SectionAuteurs\">\n";
+        $php .= "                    <h2 class=\"TitreHeader\">L'auteur</h2>\n";
+        $php .= "                    <p class=\"auteur\" itemprop=\"name\" itemscope itemtype=\"http://schema.org/Person\"><a itemprop=\"url\" class=\"auteur\" href=\"#\"><span itemprop=\"author\">" . htmlspecialchars($author) . "</span></a></p>\n";
+        $php .= "                </section>\n";
+        $php .= "                <section class=\"SectionInformationArticle\">\n";
+        $php .= "                    <h2 class=\"TitreHeader\">L'article</h2>\n";
+        $php .= "                    <p class=\"InfoArticle\">Publi&eacute;&nbsp;le&nbsp;<span itemprop=\"datePublished\">$date</span></p>\n";
+        $php .= "                </section>\n";
+        $php .= "                <section class=\"SectionBookmarks\">\n";
+        $php .= "                    <h2 class=\"TitreHeader\">Liens&nbsp;sociaux</h2>\n";
+        $php .= "                    <div class=\"InfoBookmarks\"><?php echo DoBookMarks(\"" . addslashes($title) . "\",'$url'); ?></div>\n";
+        $php .= "                </section></div><section itemprop=\"articleBody\" class=\"articleBody\">\n\n";
+        $php .= $processedHtml . "\n\n";
+        $php .= "            </section><section class=\"articleBody\"><p>Vous avez aimé ce tutoriel ? Alors partagez-le en cliquant sur les boutons suivants : <?php echo DoBookMarks(\"" . addslashes($title) . "\",'$url'); ?></p></section></div>\n\n";
+        $php .= "    </section>\n";
+        $php .= "</article>\n\n";
+        $php .= "<?php\ninclude(\$_SERVER[\"DOCUMENT_ROOT\"].\"/template/pied.php\");\n?>\n";
+
+        return $php;
     }
     $relXml = basename($paths['xml']);
     return "<?php\nheader('Content-Type: text/html; charset=utf-8');\n\$xml = __DIR__ . '/{$relXml}';\n\$xsl = __DIR__ . '/../../admin/xsl/default.xsl';\nif (!is_file(\$xml) || !is_file(\$xsl)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$dom = new DOMDocument();\n\$dom->load(\$xml);\n\$x = new DOMDocument();\n\$x->load(\$xsl);\n\$p = new XSLTProcessor();\n\$p->importStylesheet(\$x);\necho \$p->transformToXML(\$dom);\n";
