@@ -152,7 +152,7 @@ function xml_skeleton($title, $author='') {
     $date = date('Y-m-d');
     $titlePage = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
     $defaultAuthor = isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : '';
-    $author = htmlspecialchars($author ? $author : (isset($_SESSION['user'])?$_SESSION['user']:$defaultAuthor), ENT_QUOTES, 'UTF-8');
+    $author = htmlspecialchars($author ? $author : ($defaultAuthor ? $defaultAuthor : (isset($_SESSION['user'])?$_SESSION['user']:'')), ENT_QUOTES, 'UTF-8');
     return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<document>\n  <entete>\n    <titre>\n      <page>{$titlePage}</page>\n      <article>{$titlePage}</article>\n    </titre>\n    <date>{$date}</date>\n    <licauteur>{$author}</licauteur>\n  </entete>\n  <summary>\n    <section id=\"1\">\n      <title>Introduction</title>\n      <paragraph>Commencez ici…</paragraph>\n    </section>\n  </summary>\n</document>\n";
 }
 function xslt_transform_to_html($xmlPath) {
@@ -221,7 +221,7 @@ function generate_index_php($type, $slug) {
             $processedHtml .= $dom->saveHTML($child);
         }
 
-        $author = isset($_SESSION['user']) ? $_SESSION['user'] : (isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : 'Anonyme');
+        $author = isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : (isset($_SESSION['user']) ? $_SESSION['user'] : 'Anonyme');
         $date = date('d F Y');
         $year = date('Y');
         $desc = $title;
