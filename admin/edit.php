@@ -56,6 +56,15 @@ iframe{flex:1;border:0;background:#ffffff;min-height:0}
 .CodeMirror{flex:1;border:0;border-radius:0;min-height:0;height:100%!important}
 .editor-toolbar{border-color:#ddd;border-radius:0;flex-shrink:0}
 .editor-statusbar{display:none}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:none;justify-content:center;align-items:center;z-index:100}
+.modal{background:#1f2937;padding:20px;border-radius:8px;width:500px;max-width:90%;max-height:80vh;display:flex;flex-direction:column}
+.modal-header{display:flex;justify-content:space-between;margin-bottom:15px;font-weight:bold}
+.modal-body{overflow-y:auto;flex:1}
+.image-item{display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid #374151}
+.image-item img{width:40px;height:40px;object-fit:cover;border-radius:4px;margin-right:10px}
+.image-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.image-actions{display:flex;gap:5px}
+.close-modal{cursor:pointer;font-size:20px}
 </style>
 <header class="header">
   <div><a href="/admin/">← Retour</a></div>
@@ -72,6 +81,9 @@ iframe{flex:1;border:0;background:#ffffff;min-height:0}
 <div class="container" id="container">
   <div class="panel" id="leftPanel" style="width:50%">
     <div class="toolbar">
+      <input type="file" id="imgUpload" style="display:none" accept="image/*">
+      <button class="btn" type="button" onclick="triggerUpload()">📷 Upload Image</button>
+      <button class="btn" type="button" onclick="openImgModal()">📂 Gérer Images</button>
       <?php if ($mode === 'xml'): ?>
       <button class="btn" type="button" onclick="wrapTag('paragraph')">Paragraph</button>
       <button class="btn" type="button" onclick="insertSection()">+ Section</button>
@@ -95,6 +107,17 @@ iframe{flex:1;border:0;background:#ffffff;min-height:0}
     <iframe id="preview"></iframe>
   </div>
 </div>
+
+<div class="modal-overlay" id="imgModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span>Gérer les images</span>
+      <span class="close-modal" onclick="closeImgModal()">×</span>
+    </div>
+    <div class="modal-body" id="imgList">Chargement...</div>
+  </div>
+</div>
+
 <script>
 const ta = document.getElementById('editor');
 const pv = document.getElementById('preview');
@@ -162,6 +185,121 @@ function saveContent(){
   fetch('/admin/save.php', {method:'POST', body}).then(r=>r.json()).then(j=>{
     statusEl.textContent = j.ok ? 'Sauvegardé' : 'Erreur: ' + (j.error||'');
   }).catch(()=>{statusEl.textContent='Erreur réseau';});
+}
+
+// Image Upload
+function triggerUpload() {
+    document.getElementById('imgUpload').click();
+}
+
+document.getElementById('imgUpload').addEventListener('change', function() {
+    if (this.files && this.files[0]) {
+        uploadFile(this.files[0]);
+    }
+    this.value = ''; // reset
+});
+
+function uploadFile(file) {
+    statusEl.textContent = 'Upload en cours...';
+    const fd = new FormData();
+    fd.append('csrf', '<?=htmlspecialchars(csrf_token())?>');
+    fd.append('type', '<?=htmlspecialchars($type)?>');
+    fd.append('slug', '<?=htmlspecialchars($slug)?>');
+    fd.append('file', file);
+
+    fetch('/admin/upload.php', {method:'POST', body: fd})
+    .then(r => {
+        if (!r.ok) return r.text().then(t => { throw new Error(t) });
+        return r.json();
+    })
+    .then(data => {
+        statusEl.textContent = 'Image uploadée';
+        insertImageCode(data.url, data.filename);
+    })
+    .catch(e => {
+        statusEl.textContent = 'Erreur: ' + e.message;
+        console.error(e);
+    });
+}
+
+function insertImageCode(url, alt) {
+    const code = mode === 'md' ? `![${alt}](${url})` : `<image src="${url}" alt="${alt}" />`;
+
+    if (easyMDE) {
+        const cm = easyMDE.codemirror;
+        const doc = cm.getDoc();
+        const cursor = doc.getCursor();
+        doc.replaceRange(code, cursor);
+    } else {
+        const s = ta.selectionStart;
+        const before = ta.value.slice(0,s);
+        const after = ta.value.slice(ta.selectionEnd);
+        ta.value = before + code + after;
+        ta.focus();
+        ta.selectionStart = s + code.length;
+        ta.selectionEnd = s + code.length;
+        refreshPreview();
+    }
+}
+
+function openImgModal() {
+    document.getElementById('imgModal').style.display = 'flex';
+    loadImages();
+}
+function closeImgModal() {
+    document.getElementById('imgModal').style.display = 'none';
+}
+function loadImages() {
+    const list = document.getElementById('imgList');
+    list.innerHTML = 'Chargement...';
+    fetch(`/admin/list_images.php?type=<?=htmlspecialchars($type)?>&slug=<?=htmlspecialchars($slug)?>`)
+    .then(r => r.json())
+    .then(imgs => {
+        if (imgs.length === 0) {
+            list.innerHTML = '<div style="padding:10px;text-align:center;color:#9ca3af">Aucune image</div>';
+            return;
+        }
+        list.innerHTML = '';
+        imgs.forEach(img => {
+            const div = document.createElement('div');
+            div.className = 'image-item';
+            // Construct URL for preview. Note: this assumes standard structure.
+            // Ideally list_images.php returns full relative URL or we construct it carefully.
+            // list_images.php returns 'url' as './images/filename'.
+            // But for the <img> src in the modal, we need a path relative to the admin page OR absolute.
+            // The admin page is at /admin/edit.php.
+            // The images are at /type/slug/images/filename.
+            const previewUrl = `/${'<?=htmlspecialchars($type)?>'}/${'<?=htmlspecialchars($slug)?>'}/images/${img.name}`;
+
+            div.innerHTML = `
+                <div style="display:flex;align-items:center;overflow:hidden">
+                    <img src="${previewUrl}" alt="">
+                    <div class="image-info" title="${img.name}">${img.name}</div>
+                </div>
+                <div class="image-actions">
+                    <button class="btn" onclick="insertImageCode('${img.url}', '${img.name}');closeImgModal()">Insérer</button>
+                    <button class="btn" style="background:#ef4444;border-color:#ef4444" onclick="deleteImage('${img.name}')">Suppr.</button>
+                </div>
+            `;
+            list.appendChild(div);
+        });
+    })
+    .catch(e => list.innerHTML = 'Erreur chargement');
+}
+function deleteImage(filename) {
+    if(!confirm('Supprimer ' + filename + ' ?')) return;
+    const fd = new FormData();
+    fd.append('csrf', '<?=htmlspecialchars(csrf_token())?>');
+    fd.append('type', '<?=htmlspecialchars($type)?>');
+    fd.append('slug', '<?=htmlspecialchars($slug)?>');
+    fd.append('filename', filename);
+    fetch('/admin/delete_image.php', {method:'POST', body:fd})
+    .then(r => r.json())
+    .then(j => {
+        if(j.ok) loadImages();
+        else alert('Erreur suppression');
+    })
+    .catch(() => alert('Erreur réseau'));
 }
 
 refreshPreview();
