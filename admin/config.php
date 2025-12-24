@@ -25,6 +25,10 @@ $CMSXML_DEBUG = getenv('CMSXML_DEBUG') ? true : false;
 $BIN_WKHTMLTOPDF = trim((string)@shell_exec('command -v wkhtmltopdf 2>/dev/null')) ?: null;
 $BIN_EBOOK_CONVERT = trim((string)@shell_exec('command -v ebook-convert 2>/dev/null')) ?: null;
 
+// Auteur par défaut
+$DEFAULT_AUTHOR = 'Pierre Therrode';
+$DEFAULT_AUTHOR_HOMEPAGE = 'https://www.developpez.com/user/profil/103867/pi-2r/';
+
 // Sécurité
 $CSRF_SECRET = md5(__FILE__ . php_uname());
 
@@ -50,7 +54,6 @@ ini_set('default_charset','UTF-8');
 if (function_exists('mb_internal_encoding')) { @mb_internal_encoding('UTF-8'); }
 
 // Configuration par défaut pour les articles
-$DEFAULT_AUTHOR = 'Pierre Therrode';
 $DEFAULT_LICENSE = '2';
 $DEFAULT_RUBRIC = 40;
 $WEBSITE_ROOT_URL = 'https://thpierre.developpez.com/';

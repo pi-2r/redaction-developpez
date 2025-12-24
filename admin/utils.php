@@ -282,9 +282,11 @@ EOD;
         $php .= "            <section itemprop=\"about\" class=\"SectionSynopsis\">\n";
         $php .= "                <p>" . htmlspecialchars($desc) . "</p>\n";
         $php .= "                <p class=\"TextNbrVues\">Article lu <span id=\"NbrVues\">&nbsp;</span> fois.</p></section><div class=\"InfoAuthArtBook\">\n";
+        $authorHomepage = isset($GLOBALS['DEFAULT_AUTHOR_HOMEPAGE']) ? $GLOBALS['DEFAULT_AUTHOR_HOMEPAGE'] : '#';
+
         $php .= "                <section class=\"SectionAuteurs\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">L'auteur</h2>\n";
-        $php .= "                    <p class=\"auteur\" itemprop=\"name\" itemscope itemtype=\"http://schema.org/Person\"><a itemprop=\"url\" class=\"auteur\" href=\"#\"><span itemprop=\"author\">" . htmlspecialchars($author) . "</span></a></p>\n";
+        $php .= "                    <p class=\"auteur\" itemprop=\"name\" itemscope itemtype=\"http://schema.org/Person\"><a itemprop=\"url\" class=\"auteur\" href=\" \"><span itemprop=\"author\">" . htmlspecialchars($author) . "</span></a><a class=\"homepage\" href=\"" . htmlspecialchars($authorHomepage) . "\"><img src=\"https://www.developpez.net/forums/images/ranks/pro.png\" title=\"Profil Pro\" alt=\"Profil Pro\" style=\"vertical-align:middle;\"/></a><a class=\"homepage\" href=\"https://thpierre.developpez.com\"><img src=\"/template/kit/kitbm-site-personnel.png\" title=\"Espace de " . htmlspecialchars($author) . "\" alt=\"Site personnel\" style=\"vertical-align:middle;\"/></a></p>\n";
         $php .= "                </section>\n";
         $php .= "                <section class=\"SectionInformationArticle\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">L'article</h2>\n";
