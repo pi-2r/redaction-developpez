@@ -173,6 +173,7 @@ function markdown_to_html($mdPath) {
     return "<!doctype html>\n<meta charset=\"utf-8\">\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\n" . $body;
 }
 function generate_index_php($type, $slug) {
+    global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
     if (is_file($paths['md'])) {
         $mdContent = file_get_contents($paths['md']);
@@ -195,11 +196,21 @@ function generate_index_php($type, $slug) {
         $title = 'Titre inconnu';
 
         foreach ($headers as $header) {
+            $headerText = $header->textContent;
+
             if ($header->tagName === 'h1' && $hCount === 0) {
-                $title = $header->textContent;
+                $title = $headerText;
                 $hCount++;
                 continue;
             }
+
+            $indentClass = 'summaryIndent0';
+            if ($header->tagName === 'h3') {
+                $indentClass = 'summaryIndent1';
+            } elseif ($header->tagName === 'h4') {
+                $indentClass = 'summaryIndent2';
+            }
+
             $id = 'header-' . $hCount;
             $header->setAttribute('id', $id);
 
@@ -210,7 +221,7 @@ function generate_index_php($type, $slug) {
             $a->nodeValue = '▲';
             $header->appendChild($a);
 
-            $toc .= '<li><a class="summaryIndent0" href="#' . $id . '">' . htmlspecialchars($header->textContent) . '</a></li>';
+            $toc .= '<li><a class="' . $indentClass . '" href="#' . $id . '">' . htmlspecialchars($headerText) . '</a></li>';
             $hCount++;
         }
         $toc .= '</ul></nav>';
@@ -291,6 +302,21 @@ EOD;
         $php .= "                <section class=\"SectionInformationArticle\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">L'article</h2>\n";
         $php .= "                    <p class=\"InfoArticle\">Publi&eacute;&nbsp;le&nbsp;<span itemprop=\"datePublished\">$date</span></p>\n";
+
+        if ($BIN_WKHTMLTOPDF || class_exists('ZipArchive')) {
+            $php .= "<p>";
+            if ($BIN_WKHTMLTOPDF) {
+                $php .= "<span class=\"lientelechargementpdf\"><a class=\"lientelechargement\" href=\"{$url}{$slug}.pdf\" title=\"Télécharger la version PDF de cet article.\">Version PDF</a></span> ";
+            }
+            if (class_exists('ZipArchive')) {
+                $php .= "<span class=\"lientelechargementzip\"><a class=\"lientelechargement\" href=\"{$url}{$slug}.zip\" title=\"Télécharger la version HTML de cet article.\">Version hors-ligne</a></span>";
+            }
+            $php .= "</p>\n";
+        }
+        if ($BIN_EBOOK_CONVERT) {
+            $php .= "<p><span class=\"lientelechargementebook\"><a class=\"lientelechargement\" href=\"{$url}{$slug}.epub\" title=\"Télécharger la version ePub de l'article compatible avec la plupart des liseuses non Kindle (Amazon).\">ePub</a></span>, <span class=\"lientelechargementebook\"><a class=\"lientelechargement\" href=\"{$url}{$slug}.azw\" title=\"Télécharger la version Azw spécifique aux liseuses Kindle (Amazon).\">Azw</a></span> et <span class=\"lientelechargementebook\"><a class=\"lientelechargement\" href=\"{$url}{$slug}.mobi\" title=\"Télécharger la version Mobi de l'article compatible avec les liseuses Amazon.\">Mobi</a></span></p>\n";
+        }
+
         $php .= "                </section>\n";
         $php .= "                <section class=\"SectionBookmarks\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">Liens&nbsp;sociaux</h2>\n";
