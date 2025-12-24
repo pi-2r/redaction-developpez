@@ -244,7 +244,25 @@ function generate_index_php($type, $slug) {
         $defaultRubric = isset($GLOBALS['DEFAULT_RUBRIC']) ? $GLOBALS['DEFAULT_RUBRIC'] : 40;
         $defaultLicense = isset($GLOBALS['DEFAULT_LICENSE']) ? $GLOBALS['DEFAULT_LICENSE'] : '2';
 
+        // Check metadata for private access
+        $metaFile = $paths['dir'] . '/meta.json';
+        $meta = array();
+        if (is_file($metaFile)) {
+            $meta = json_decode(file_get_contents($metaFile), true);
+        }
+        $isPrivate = !empty($meta['is_private']);
+        $privateToken = isset($meta['private_token']) ? $meta['private_token'] : '';
+
         $php = "<?php\n";
+
+        if ($isPrivate && $privateToken) {
+            $php .= "if (!isset(\$_GET['token']) || \$_GET['token'] !== '$privateToken') {\n";
+            $php .= "    header('HTTP/1.0 403 Forbidden');\n";
+            $php .= "    echo '<h1>Article en cours de rédaction</h1>';\n";
+            $php .= "    exit;\n";
+            $php .= "}\n\n";
+        }
+
         $php .= "include \$_SERVER['DOCUMENT_ROOT'].\"/template/fonctions.php\";\n\n";
         $php .= "\$rubrique = $defaultRubric;\n";
         $php .= "\$meta_description = \"" . addslashes($desc) . "\";\n";

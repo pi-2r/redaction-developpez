@@ -6,6 +6,14 @@ $slug = clean_path_param((string)(isset($_GET['slug']) ? $_GET['slug'] : ''));
 if ($slug === '') { set_flash('Projet introuvable', 'error'); header('Location: /admin/'); exit; }
 $paths = project_paths($type, $slug);
 
+$metaFile = $paths['dir'] . '/meta.json';
+$meta = array();
+if (is_file($metaFile)) {
+    $meta = json_decode(file_get_contents($metaFile), true);
+}
+$isPrivate = !empty($meta['is_private']);
+$privateToken = isset($meta['private_token']) ? $meta['private_token'] : '';
+
 $isMd = is_file($paths['md']);
 $isXml = is_file($paths['xml']);
 
@@ -65,10 +73,31 @@ iframe{flex:1;border:0;background:#ffffff;min-height:0}
 .image-info{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .image-actions{display:flex;gap:5px}
 .close-modal{cursor:pointer;font-size:20px}
+/* Switch */
+.switch {position: relative;display: inline-block;width: 40px;height: 20px;}
+.switch input {opacity: 0;width: 0;height: 0;}
+.slider {position: absolute;cursor: pointer;top: 0;left: 0;right: 0;bottom: 0;background-color: #ccc;-webkit-transition: .4s;transition: .4s;border-radius: 20px;}
+.slider:before {position: absolute;content: "";height: 16px;width: 16px;left: 2px;bottom: 2px;background-color: white;-webkit-transition: .4s;transition: .4s;border-radius: 50%;}
+input:checked + .slider {background-color: #2196F3;}
+input:focus + .slider {box-shadow: 0 0 1px #2196F3;}
+input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transform: translateX(20px);transform: translateX(20px);}
 </style>
 <header class="header">
   <div><a href="/admin/">← Retour</a></div>
-  <div><?=$type?> / <strong><?=$slug?></strong> <span class="small">(<?=$mode?>)</span></div>
+  <div style="display:flex;align-items:center;gap:15px">
+      <div><?=$type?> / <strong><?=$slug?></strong> <span class="small">(<?=$mode?>)</span></div>
+      <div style="display:flex;align-items:center;gap:8px;background:#1f2937;padding:4px 8px;border-radius:8px">
+          <label class="switch">
+              <input type="checkbox" id="privateSwitch" <?=$isPrivate?'checked':''?> onchange="togglePrivate()">
+              <span class="slider"></span>
+          </label>
+          <span id="privateLabel" class="small"><?=$isPrivate?'Privé':'Public'?></span>
+          <div id="privateUrlContainer" style="display:<?=$isPrivate?'flex':'none'?>;gap:5px">
+              <input type="text" id="privateUrl" readonly style="background:#111827;border:1px solid #374151;color:#9ca3af;padding:2px 5px;border-radius:4px;width:150px;font-size:11px">
+              <button class="btn" style="padding:2px 6px;font-size:11px" onclick="copyPrivateUrl()">Copier</button>
+          </div>
+      </div>
+  </div>
   <div>
     <form style="display:inline" method="post" action="/admin/publish.php">
       <input type="hidden" name="csrf" value="<?=htmlspecialchars(csrf_token())?>">
@@ -335,5 +364,51 @@ document.addEventListener('mouseup', () => {
     if (easyMDE) easyMDE.codemirror.refresh();
   }
 });
+
+function togglePrivate() {
+    const isPrivate = document.getElementById('privateSwitch').checked;
+    const fd = new FormData();
+    fd.append('csrf', '<?=htmlspecialchars(csrf_token())?>');
+    fd.append('type', '<?=htmlspecialchars($type)?>');
+    fd.append('slug', '<?=htmlspecialchars($slug)?>');
+    fd.append('is_private', isPrivate ? 1 : 0);
+
+    fetch('/admin/save_meta.php', {method:'POST', body:fd})
+    .then(r=>r.json())
+    .then(j=>{
+        if(j.ok) {
+            document.getElementById('privateLabel').textContent = isPrivate ? 'Privé' : 'Public';
+            document.getElementById('privateUrlContainer').style.display = isPrivate ? 'flex' : 'none';
+            if (isPrivate && j.meta.private_token) {
+                updatePrivateUrl(j.meta.private_token);
+            }
+        } else {
+            alert('Erreur: ' + j.error);
+            document.getElementById('privateSwitch').checked = !isPrivate; // revert
+        }
+    })
+    .catch(e => {
+        alert('Erreur réseau');
+        document.getElementById('privateSwitch').checked = !isPrivate;
+    });
+}
+
+function updatePrivateUrl(token) {
+    const baseUrl = window.location.origin + '/<?=$type?>/<?=$slug?>/index.php';
+    const url = baseUrl + '?token=' + token;
+    document.getElementById('privateUrl').value = url;
+}
+
+function copyPrivateUrl() {
+    const copyText = document.getElementById("privateUrl");
+    copyText.select();
+    copyText.setSelectionRange(0, 99999);
+    navigator.clipboard.writeText(copyText.value);
+    alert("URL copiée");
+}
+
+<?php if ($isPrivate && $privateToken): ?>
+updatePrivateUrl('<?=$privateToken?>');
+<?php endif; ?>
 </script>
 
