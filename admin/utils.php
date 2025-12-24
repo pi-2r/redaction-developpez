@@ -201,6 +201,7 @@ function generate_index_php($type, $slug) {
             if ($header->tagName === 'h1' && $hCount === 0) {
                 $title = $headerText;
                 $hCount++;
+                $header->parentNode->removeChild($header);
                 continue;
             }
 
