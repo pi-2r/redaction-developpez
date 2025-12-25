@@ -257,8 +257,7 @@ function generate_index_php($type, $slug) {
 
         if ($isPrivate && $privateToken) {
             $php .= "if (!isset(\$_GET['token']) || \$_GET['token'] !== '$privateToken') {\n";
-            $php .= "    header('HTTP/1.0 403 Forbidden');\n";
-            $php .= "    echo '<h1>Article en cours de rédaction</h1>';\n";
+            $php .= "    include __DIR__ . '/../../index.php';\n";
             $php .= "    exit;\n";
             $php .= "}\n\n";
         }

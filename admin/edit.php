@@ -160,8 +160,14 @@ if (mode === 'md') {
         element: ta,
         spellChecker: false,
         autosave: { enabled: false },
-        toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "image", "|", "guide"],
-        status: false
+        toolbar: [
+            "bold", "italic", "strikethrough", "|",
+            "heading-1", "heading-2", "heading-3", "|",
+            "code", "quote", "unordered-list", "ordered-list", "|",
+            "link", "image", "table", "horizontal-rule", "|",
+            "preview", "guide"
+        ],
+        status: ["lines", "words", "cursor"],
     });
     easyMDE.codemirror.on("change", () => {
         ta.value = easyMDE.value();
