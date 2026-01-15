@@ -301,6 +301,10 @@ function encrypt_email($email, $texte, $titre="") { if (preg_match("/^mailto:/i"
 function web_to_mobile($video) { return preg_replace('/http:\/\/www\.youtube\.com/', 'http://m.youtube.com', $video); }
 EOD;
         $php .= "\n\ninclude(\$_SERVER['DOCUMENT_ROOT'] . '/template/entete.php');\n?>\n";
+        
+        if ($isPrivate) {
+            $php .= '<div style="background:#fff3cd;color:#856404;padding:15px;text-align:center;border-bottom:1px solid #ffeeba;font-family:sans-serif;">⚠️ <strong>Article privé</strong> : Cet article est en cours de rédaction.</div>';
+        }
 
         $php .= "<article class=\"ArticleComplet\" itemscope itemtype=\"https://schema.org/Article\">\n";
         $php .= "    <meta itemprop=\"genre\" content=\"informatique\"/>\n";

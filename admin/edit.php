@@ -188,7 +188,11 @@ function refreshPreview(){
   body.append(mode, val);
   fetch('/admin/preview.php', {method:'POST', body}).then(r=>r.text()).then(html=>{
     const doc = pv.contentDocument || pv.contentWindow.document;
-    doc.open(); doc.write(html); doc.close();
+    const baseUrl = window.location.origin + '/<?=$type?>/<?=$slug?>/';
+    doc.open();
+    doc.write('<base href="' + baseUrl + '">');
+    doc.write(html);
+    doc.close();
   }).catch(()=>{});
 }
 
