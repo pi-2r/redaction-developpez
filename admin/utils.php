@@ -168,6 +168,8 @@ function xslt_transform_to_html($xmlPath) {
 function markdown_to_html($mdPath) {
     if (!is_file($mdPath)) return '<!doctype html><meta charset="utf-8"><p>Fichier Markdown introuvable</p>';
     $text = file_get_contents($mdPath);
+    // Fix: Replace deprecated <center> tags which can confuse Parsedown or render poorly
+    $text = str_ireplace(array('<center>', '</center>'), array('<div style="text-align:center">', '</div>'), $text);
     $pd = new Parsedown();
     $body = $pd->text($text);
     return "<!doctype html>\n<meta charset=\"utf-8\">\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\n" . $body;
@@ -177,6 +179,8 @@ function generate_index_php($type, $slug) {
     $paths = project_paths($type, $slug);
     if (is_file($paths['md'])) {
         $mdContent = file_get_contents($paths['md']);
+        // Fix: Replace deprecated <center> tags
+        $mdContent = str_ireplace(array('<center>', '</center>'), array('<div style="text-align:center">', '</div>'), $mdContent);
         $pd = new Parsedown();
         $html = $pd->text($mdContent);
 
@@ -284,6 +288,27 @@ function generate_index_php($type, $slug) {
         $php .= "    . \"\\t<!--[if lte IE 6]><link rel=\\\"stylesheet\\\" type=\\\"text/css\\\" href=\\\"/template/kit/ie6.css\\\" /><![endif]-->\\n\"\n";
         $php .= "    . \"\\t<!--[if lt IE 9]><script type=\\\"text/javascript\\\" src=\\\"/template/kit/html5_ie.js\\\"></script><![endif]-->\\n\";\n\n";
 
+        $php .= <<<'EOD'
+$gabarit_extrahead .= '
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: false });
+document.addEventListener("DOMContentLoaded", function() {
+    const mermaids = document.querySelectorAll("pre > code.language-mermaid");
+    mermaids.forEach(el => {
+        const pre = el.parentElement;
+        const div = document.createElement("div");
+        div.className = "mermaid";
+        div.textContent = el.textContent;
+        div.style.textAlign = "center";
+        pre.replaceWith(div);
+    });
+    mermaid.run();
+});
+</script>
+';
+EOD;
+        $php .= "\n";
         $php .= "\$gabarit_js = array('/template/kit/developpez-kit-generation.js', '/template/kit/lightbox.js', '/template/kit/fonctions-kit.js');\n";
         $php .= "\$gabarit_css = array('/template/kit/developpez-kit-generation.css', '/template/kit/code.css', '/template/kit/lightbox.css');\n";
 
@@ -357,6 +382,9 @@ EOD;
 }
 // -------- Publication --------
 function publish_all_formats($type, $slug) {
+    ini_set('display_errors', 1);
+    ini_set('display_startup_errors', 1);
+    error_reporting(E_ALL);
     global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
     $dir = $paths['dir'];

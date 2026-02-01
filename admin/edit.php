@@ -113,6 +113,7 @@ input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transfor
       <input type="file" id="imgUpload" style="display:none" accept="image/*">
       <button class="btn" type="button" onclick="triggerUpload()">📷 Upload Image</button>
       <button class="btn" type="button" onclick="openImgModal()">📂 Gérer Images</button>
+      <button class="btn" type="button" onclick="insertDoubleImage()" title="2 images côte à côte">🖼️ 2 Images</button>
       <?php if ($mode === 'xml'): ?>
       <button class="btn" type="button" onclick="wrapTag('paragraph')">Paragraph</button>
       <button class="btn" type="button" onclick="insertSection()">+ Section</button>
@@ -262,7 +263,14 @@ function uploadFile(file) {
 }
 
 function insertImageCode(url, alt) {
-    const code = mode === 'md' ? `![${alt}](${url})` : `<image src="${url}" alt="${alt}" />`;
+    let width = prompt("Largeur de l'image ? (ex: 50%, 300px, ou laisser vide pour par défaut)");
+    let code = '';
+    
+    if (width && width.trim() !== '') {
+        code = `<img src="${url}" alt="${alt}" style="width:${width}" />`;
+    } else {
+        code = mode === 'md' ? `![${alt}](${url})` : `<image src="${url}" alt="${alt}" />`;
+    }
 
     if (easyMDE) {
         const cm = easyMDE.codemirror;
@@ -277,6 +285,30 @@ function insertImageCode(url, alt) {
         ta.focus();
         ta.selectionStart = s + code.length;
         ta.selectionEnd = s + code.length;
+        refreshPreview();
+    }
+}
+
+function insertDoubleImage() {
+    const code = `
+
+<table style="width:100%; border:0; border-collapse:collapse; margin:10px 0;">
+  <tr>
+    <td style="border:0; padding:5px; width:50%; vertical-align:top;">
+      <img src="IMAGE_1_URL" style="width:100%; object-fit:cover;" />
+    </td>
+    <td style="border:0; padding:5px; width:50%; vertical-align:top;">
+      <img src="IMAGE_2_URL" style="width:100%; object-fit:cover;" />
+    </td>
+  </tr>
+</table>
+
+`;
+    if (easyMDE) {
+        easyMDE.codemirror.replaceSelection(code);
+    } else {
+        const s = ta.selectionStart;
+        ta.value = ta.value.slice(0,s) + code + ta.value.slice(ta.selectionEnd);
         refreshPreview();
     }
 }

@@ -207,7 +207,7 @@ class Parsedown
                     continue;
                 }
 
-                if (is_callable($this->{'block'.$CurrentBlock['type'].'Complete'}))
+                if (method_exists($this, 'block'.$CurrentBlock['type'].'Complete'))
                 {
                     $CurrentBlock = $this->{'block'.$CurrentBlock['type'].'Complete'}($CurrentBlock);
                 }
@@ -249,7 +249,7 @@ class Parsedown
                         $Block['identified'] = true;
                     }
 
-                    if (is_callable($this->{'block'.$blockType.'Continue'}))
+                    if (method_exists($this, 'block'.$blockType.'Continue'))
                     {
                         $Block['continuable'] = true;
                     }
@@ -572,7 +572,7 @@ class Parsedown
             {
                 $Block['li']['text'] []= '';
 
-                $this->processBlock($Block['li']['text'], $Block['li']);
+
 
                 unset($Block['interrupted']);
             }
@@ -607,7 +607,7 @@ class Parsedown
             {
                 $Block['li']['text'] []= '';
 
-                $this->processBlock($Block['li']['text'], $Block['li']);
+
 
                 unset($Block['interrupted']);
             }
@@ -626,12 +626,12 @@ class Parsedown
         {
             $Block['li']['text'] []= '';
 
-            $this->processBlock($Block['li']['text'], $Block['li']);
+
 
             unset($Block['interrupted']);
         }
 
-        $this->processBlock($Block['li']['text'], $Block['li']);
+
 
         return $Block;
     }
