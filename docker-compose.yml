@@ -1,0 +1,17 @@
+services:
+  cms:
+    build: .
+    container_name: developpez-cms
+    ports:
+      - "8080:80"
+    volumes:
+      # Persistance des articles et tutoriels
+      - ./articles:/var/www/html/articles
+      - ./tutoriels:/var/www/html/tutoriels
+      # Persistance des mots de passe (pour ne pas les perdre au redémarrage)
+      - ./admin/passwords.txt:/var/www/html/admin/passwords.txt
+      # Optionnel : logs si besoin
+      # - ./logs:/var/log/apache2
+    environment:
+      - CMSXML_DEBUG=1
+    restart: unless-stopped
