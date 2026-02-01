@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+FROM php:8.2-apache-bullseye
 
 # Installation des dépendances système nécessaires
 # libonig-dev pour mbstring
