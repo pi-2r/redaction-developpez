@@ -174,6 +174,51 @@ function markdown_to_html($mdPath) {
     $body = $pd->text($text);
     return "<!doctype html>\n<meta charset=\"utf-8\">\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\n" . $body;
 }
+// Wrap content between headings in BlocSection divs (developpez.com kit structure)
+function dvp_wrap_sections_in_blocs($html) {
+    $pattern = '/(<h[23]\s[^>]*>.*?<\/h[23]>)/s';
+    $parts = preg_split($pattern, $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+    if ($parts === false) return $html;
+
+    $result = '';
+    $openStack = array();
+
+    for ($i = 0; $i < count($parts); $i++) {
+        $part = $parts[$i];
+
+        if (preg_match('/^<(h[23])\s/', $part, $m)) {
+            $tag = $m[1];
+
+            if ($tag === 'h2') {
+                // Close any open BlocSection1 then BlocSection0
+                while ($openStack) {
+                    $result .= '</div>';
+                    array_pop($openStack);
+                }
+                $result .= $part . '<div class="BlocSection0">';
+                $openStack[] = 0;
+            } elseif ($tag === 'h3') {
+                // Close any open BlocSection1 only
+                while ($openStack && end($openStack) === 1) {
+                    $result .= '</div>';
+                    array_pop($openStack);
+                }
+                $result .= $part . '<div class="BlocSection1">';
+                $openStack[] = 1;
+            }
+        } else {
+            $result .= $part;
+        }
+    }
+
+    // Close remaining open divs
+    while ($openStack) {
+        $result .= '</div>';
+        array_pop($openStack);
+    }
+
+    return $result;
+}
 function generate_index_php($type, $slug) {
     global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
@@ -192,12 +237,13 @@ function generate_index_php($type, $slug) {
         $xpath = new DOMXPath($dom);
         $headers = $xpath->query('//h1|//h2|//h3');
 
-        $toc = '<nav class="nav-sommaire" role="navigation">
+        $tocNav = '<nav class="nav-sommaire" role="navigation">
             <h2 class="TitreHeader ToggleGecko">Table des mati&egrave;res<img class="ToggleImgPlier" title="Plier" alt="Plier" src="/template/kit/fleche-haut-bleue.png"/><img class="ToggleImgDeplier" title="Déplier" alt="Déplier" src="/template/kit/fleche-bas-bleue.png" style="display:none;"/></h2>
             <ul id="nav_sommaire_ul_principal" class="nav-sommaire-ul">';
 
         $hCount = 0;
         $title = 'Titre inconnu';
+        $tocItems = array();
 
         foreach ($headers as $header) {
             $headerText = $header->textContent;
@@ -209,15 +255,15 @@ function generate_index_php($type, $slug) {
                 continue;
             }
 
-            $indentClass = 'summaryIndent0';
-            if ($header->tagName === 'h3') {
-                $indentClass = 'summaryIndent1';
-            } elseif ($header->tagName === 'h4') {
-                $indentClass = 'summaryIndent2';
-            }
-
             $id = 'header-' . $hCount;
             $header->setAttribute('id', $id);
+
+            // Add CSS section classes matching developpez.com kit
+            if ($header->tagName === 'h2') {
+                $header->setAttribute('class', 'TitreSection0');
+            } elseif ($header->tagName === 'h3') {
+                $header->setAttribute('class', 'TitreSection1');
+            }
 
             $a = $dom->createElement('a');
             $a->setAttribute('class', 'HautPage');
@@ -226,16 +272,51 @@ function generate_index_php($type, $slug) {
             $a->nodeValue = '▲';
             $header->appendChild($a);
 
-            $toc .= '<li><a class="' . $indentClass . '" href="#' . $id . '">' . htmlspecialchars($headerText) . '</a></li>';
+            $level = ($header->tagName === 'h3' || $header->tagName === 'h4') ? 1 : 0;
+            $tocItems[] = array('level' => $level, 'id' => $id, 'text' => $headerText);
             $hCount++;
         }
-        $toc .= '</ul></nav>';
+
+        // Build nested TOC matching developpez.com structure
+        $tocGroups = array();
+        $currentGroup = null;
+        foreach ($tocItems as $item) {
+            if ($item['level'] === 0) {
+                if ($currentGroup !== null) { $tocGroups[] = $currentGroup; }
+                $currentGroup = array('main' => $item, 'children' => array());
+            } else {
+                if ($currentGroup !== null) {
+                    $currentGroup['children'][] = $item;
+                } else {
+                    $tocGroups[] = array('main' => $item, 'children' => array());
+                }
+            }
+        }
+        if ($currentGroup !== null) { $tocGroups[] = $currentGroup; }
+
+        foreach ($tocGroups as $group) {
+            $main = $group['main'];
+            $indentClass = $main['level'] === 0 ? 'summaryIndent0' : 'summaryIndent1';
+            $tocNav .= '<li><a class="' . $indentClass . '" href="#' . $main['id'] . '">' . htmlspecialchars($main['text']) . '</a>';
+            if (!empty($group['children'])) {
+                $tocNav .= '<ul class="nav-sommaire-ul">';
+                foreach ($group['children'] as $child) {
+                    $tocNav .= '<li><a class="summaryIndent1" href="#' . $child['id'] . '">' . htmlspecialchars($child['text']) . '</a></li>';
+                }
+                $tocNav .= '</ul>';
+            }
+            $tocNav .= '</li>';
+        }
+        $toc = $tocNav . '</ul></nav>';
 
         $bodyDiv = $dom->getElementsByTagName('div')->item(0);
         $processedHtml = '';
         foreach ($bodyDiv->childNodes as $child) {
             $processedHtml .= $dom->saveHTML($child);
         }
+
+        // Wrap sections in BlocSection divs matching developpez.com kit
+        $processedHtml = dvp_wrap_sections_in_blocs($processedHtml);
 
         $author = isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : (isset($_SESSION['user']) ? $_SESSION['user'] : 'Anonyme');
         $date = date('d F Y');
