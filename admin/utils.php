@@ -508,6 +508,7 @@ function publish_all_formats($type, $slug) {
 
     // Gestion du fichier .date
     $dateFile = $paths['date'];
+    setlocale(LC_TIME, 'fr_FR.UTF-8', 'fr_FR', 'fra');
     $now = strftime('%d %B %Y');
     if (is_file($dateFile)) {
         // Article déjà publié : conserver la date originale, mettre à jour miseajour
