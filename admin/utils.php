@@ -123,6 +123,7 @@ function project_paths($type, $slug) {
         'xml' => $xml,
         'md' => $md,
         'index' => $base . '/index.php',
+        'date' => $base . '/.date',
     );
 }
 function list_projects($type) {
@@ -354,9 +355,26 @@ function generate_index_php($type, $slug) {
         $php .= "\$Auteur = \"" . addslashes($author) . "\";\n";
         $php .= "\$Licence = \"$defaultLicense\";\n";
         $php .= "\$Annee = \"$year\";\n";
-        $php .= "\$dateBrute['date'] = '$date';\n";
-        $php .= "\$dateBrute['miseajour'] = ' ';\n";
-        $php .= "\$topicType = 'Whitepaper';\n";
+        $php .= <<<'DATEPHP'
+// Lecture du fichier .date pour les dates de publication
+$_dateFile = __DIR__ . '/.date';
+if (is_file($_dateFile)) {
+    $_dateLines = file($_dateFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    $_dates = array();
+    foreach ($_dateLines as $_dl) {
+        $_parts = explode('=', $_dl, 2);
+        if (count($_parts) === 2) { $_dates[trim($_parts[0])] = trim($_parts[1]); }
+    }
+    $dateBrute['date'] = !empty($_dates['date']) ? $_dates['date'] : date('d F Y');
+    $dateBrute['miseajour'] = !empty($_dates['miseajour']) ? $_dates['miseajour'] : ' ';
+} else {
+    setlocale(LC_TIME, 'fr_FR.UTF-8', 'fr_FR', 'fra');
+    $dateBrute['date'] = strftime('%d %B %Y');
+    $dateBrute['miseajour'] = ' ';
+}
+
+DATEPHP;
+        $php .= "\n\$topicType = 'Whitepaper';\n";
         $php .= "\$GoogleAnalytics = \"\";\n";
         $php .= "\$gabarit_mobile = true;\n";
         $php .= "\$gabarit_encodage = 'UTF-8';\n";
@@ -429,7 +447,9 @@ EOD;
         $php .= "                </section>\n";
         $php .= "                <section class=\"SectionInformationArticle\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">L'article</h2>\n";
-        $php .= "                    <p class=\"InfoArticle\">Publi&eacute;&nbsp;le&nbsp;<span itemprop=\"datePublished\">$date</span></p>\n";
+        $php .= "                    <p class=\"InfoArticle\">Publi&eacute;&nbsp;le&nbsp;<span itemprop=\"datePublished\"><?php echo htmlspecialchars(\$dateBrute['date']); ?></span>";
+        $php .= "<?php if (trim(\$dateBrute['miseajour']) !== '') { echo ' - Mis &agrave; jour le <span itemprop=\"dateModified\">' . htmlspecialchars(\$dateBrute['miseajour']) . '</span>'; } ?>";
+        $php .= "</p>\n";
 
         if ($BIN_WKHTMLTOPDF || class_exists('ZipArchive')) {
             $php .= "<p>";
@@ -485,6 +505,26 @@ function publish_all_formats($type, $slug) {
     file_put_contents($htmlPath, $html);
     write_file_atomic($paths['index'], generate_index_php($type, $slug));
     if (isset($GLOBALS['FORCE_FILE_MODE'])) { @chmod($paths['index'], $GLOBALS['FORCE_FILE_MODE']); }
+
+    // Gestion du fichier .date
+    $dateFile = $paths['date'];
+    $now = strftime('%d %B %Y');
+    if (is_file($dateFile)) {
+        // Article déjà publié : conserver la date originale, mettre à jour miseajour
+        $dateContent = file_get_contents($dateFile);
+        $origDate = '';
+        if (preg_match('/^date=(.*)$/m', $dateContent, $m)) {
+            $origDate = trim($m[1]);
+        }
+        if ($origDate === '') { $origDate = $now; }
+        $newDateContent = "date=$origDate\nmiseajour=$now\n";
+    } else {
+        // Première publication
+        $newDateContent = "date=$now\nmiseajour=\n";
+    }
+    write_file_atomic($dateFile, $newDateContent);
+    if (isset($GLOBALS['FORCE_FILE_MODE'])) { @chmod($dateFile, $GLOBALS['FORCE_FILE_MODE']); }
+
     $outputs = array();
     if ($BIN_WKHTMLTOPDF) {
         $pdf = $dir . '/' . $slug . '.pdf';
