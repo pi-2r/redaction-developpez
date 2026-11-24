@@ -41,18 +41,23 @@ input[type=text],select{background:#0b1220;color:#e5e7eb;border:1px solid #1f293
 <header class="header">
   <div class="title">CMS XML - Projets</div>
   <div>
-      <a class="btn" href="/admin/edit_home.php">Éditer Accueil</a>
-      <a class="btn" href="/admin/logout.php">Se déconnecter</a>
+      <a class="btn" href="<?php echo htmlspecialchars(admin_url('edit_home.php')); ?>">Éditer Accueil</a>
+      <a class="btn" href="<?php echo htmlspecialchars(admin_url('logout.php')); ?>">Se déconnecter</a>
   </div>
 </header>
 <div class="container">
+  <?php if (!empty($GLOBALS['PASSWORD_FILE_EXPOSED'])): ?>
+  <div class="flash error"><strong>Sécurité :</strong> le fichier <code>passwords.txt</code> est à la racine du site, donc téléchargeable par n'importe qui.
+  Déplacez-le dans <code><?php echo htmlspecialchars($GLOBALS['ADMIN_DIR_NAME']); ?>/data/passwords.txt</code> (protégé), puis supprimez celui de la racine.
+  Par précaution, changez ensuite le mot de passe (<code>bash change_admin.sh</code>).</div>
+  <?php endif; ?>
   <?php if ($flash): ?>
   <div class="flash <?=htmlspecialchars($flash['t'])?>"><?php echo htmlspecialchars($flash['m']); ?></div>
   <?php endif; ?>
 
   <div class="card" style="margin-bottom:20px">
     <h2 class="h">Statut système</h2>
-    <?php if ($showPerms): ?><p style="margin:0 0 10px"><a class="btn" href="/admin/perms.php">Permissions projets</a></p><?php endif; ?>
+    <?php if ($showPerms): ?><p style="margin:0 0 10px"><a class="btn" href="<?php echo htmlspecialchars(admin_url('perms.php')); ?>">Permissions projets</a></p><?php endif; ?>
     <ul>
       <?php foreach ($statuses as $s): ?>
       <li class="row" style="border:none;padding:4px 0">
@@ -71,7 +76,7 @@ input[type=text],select{background:#0b1220;color:#e5e7eb;border:1px solid #1f293
 
   <div class="card" style="margin-bottom:20px">
     <h2 class="h">Créer un nouveau projet</h2>
-    <form class="form-inline" method="post" action="/admin/create.php">
+    <form class="form-inline" method="post" action="<?php echo htmlspecialchars(admin_url('create.php')); ?>">
       <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>">
       <input type="text" name="title" placeholder="Titre du projet" required style="min-width:280px">
       <select name="type">
@@ -95,14 +100,14 @@ input[type=text],select{background:#0b1220;color:#e5e7eb;border:1px solid #1f293
             <div style="color:#9ca3af;font-size:12px">/<?php echo $type; ?>/<?php echo htmlspecialchars($slug); ?></div>
           </div>
           <div class="actions">
-            <a class="btn" href="/admin/edit.php?type=<?php echo $type; ?>&slug=<?php echo urlencode($slug); ?>">Éditer</a>
-            <form style="display:inline" method="post" action="/admin/publish.php">
+            <a class="btn" href="<?php echo htmlspecialchars(admin_url('edit.php')); ?>?type=<?php echo $type; ?>&slug=<?php echo urlencode($slug); ?>">Éditer</a>
+            <form style="display:inline" method="post" action="<?php echo htmlspecialchars(admin_url('publish.php')); ?>">
               <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>">
               <input type="hidden" name="type" value="<?php echo htmlspecialchars($type); ?>">
               <input type="hidden" name="slug" value="<?php echo htmlspecialchars($slug); ?>">
               <button class="btn" type="submit">Publier</button>
             </form>
-            <form style="display:inline" method="post" action="/admin/delete.php" onsubmit="return confirm('Supprimer ce projet ? Cette action est irréversible.');">
+            <form style="display:inline" method="post" action="<?php echo htmlspecialchars(admin_url('delete.php')); ?>" onsubmit="return confirm('Supprimer ce projet ? Cette action est irréversible.');">
               <input type="hidden" name="csrf" value="<?php echo htmlspecialchars(csrf_token()); ?>">
               <input type="hidden" name="type" value="<?php echo htmlspecialchars($type); ?>">
               <input type="hidden" name="slug" value="<?php echo htmlspecialchars($slug); ?>">

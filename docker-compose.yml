@@ -8,10 +8,19 @@ services:
       # Persistance des articles et tutoriels
       - ./articles:/var/www/html/articles
       - ./tutoriels:/var/www/html/tutoriels
-      # Persistance des mots de passe (pour ne pas les perdre au redémarrage)
-      - ./admin/passwords.txt:/var/www/html/admin/passwords.txt
+      # Fichier des comptes, monté hors de la racine web.
+      # Il doit exister AVANT le lancement (bash change_admin.sh le crée) :
+      # create_host_path: false évite que Docker crée un dossier vide à sa place.
+      - type: bind
+        source: ./passwords.txt
+        target: /var/www/private/passwords.txt
+        read_only: true
+        bind:
+          create_host_path: false
       # Optionnel : logs si besoin
       # - ./logs:/var/log/apache2
     environment:
-      - CMSXML_DEBUG=1
+      - CMSXML_PASSWORD_FILE=/var/www/private/passwords.txt
+      # Mettre à 1 uniquement pour diagnostiquer (active phpinfo et les outils de debug)
+      - CMSXML_DEBUG=0
     restart: unless-stopped

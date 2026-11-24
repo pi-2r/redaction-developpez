@@ -1,0 +1,16 @@
+# Ne pas embarquer dans l'image : historique git, IDE, secrets, contenus montés
+.git
+.gitignore
+.idea
+.DS_Store
+passwords.txt
+passwords.txt.*
+tmp_passwords.txt
+change_admin.sh
+Dockerfile
+docker-compose.yml
+.dockerignore
+articles
+tutoriels
+*/data
+*/enable_debug.flag

@@ -3,7 +3,7 @@ require_once __DIR__ . '/utils.php';
 require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 
@@ -13,7 +13,7 @@ $type = (isset($_POST['type']) ? $_POST['type'] : 'tutoriels') === 'articles' ? 
 
 if ($title === '') {
     set_flash('Le titre est obligatoire', 'error');
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 
@@ -27,13 +27,13 @@ if (!is_dir($parent)) {
 }
 if (!is_dir($parent)) {
     set_flash("Le dossier parent n'existe pas: " . $parent, 'error');
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 
 if (is_dir($paths['dir'])) {
     set_flash('Un projet avec ce slug existe déjà: ' . $slug, 'error');
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 
@@ -47,7 +47,7 @@ if (!@mkdir($paths['dir'], 0775, true)) {
     }
     error_log('[CMSXML] mkdir échec pour ' . $paths['dir'] . ' parent=' . $parent . ' writable=' . (is_writable($parent)?'oui':'non') . ($err && isset($err['message'])? ' err=' . $err['message'] : ''));
     set_flash($msg, 'error');
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 if (isset($GLOBALS['FORCE_DIR_MODE'])) { @chmod($paths['dir'], $GLOBALS['FORCE_DIR_MODE']); }
@@ -55,10 +55,10 @@ if (isset($GLOBALS['FORCE_DIR_MODE'])) { @chmod($paths['dir'], $GLOBALS['FORCE_D
 $xml = xml_skeleton($title);
 if (!write_file_atomic($paths['xml'], $xml)) {
     set_flash('Impossible d’écrire le fichier XML', 'error');
-    header('Location: /admin/');
+    header('Location: ' . admin_url());
     exit;
 }
 if (isset($GLOBALS['FORCE_FILE_MODE'])) { @chmod($paths['xml'], $GLOBALS['FORCE_FILE_MODE']); }
 
 set_flash('Projet créé: ' . $type . '/' . $slug, 'success');
-header('Location: /admin/edit.php?type=' . urlencode($type) . '&slug=' . urlencode($slug));
+header('Location: ' . admin_url('edit.php') . '?type=' . urlencode($type) . '&slug=' . urlencode($slug));

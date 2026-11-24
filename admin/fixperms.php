@@ -1,5 +1,11 @@
 <?php
-require_once __DIR__ . '/config.php';
+// Outil de diagnostic : réservé aux utilisateurs connectés, en mode debug.
+require_once __DIR__ . '/utils.php';
+require_login();
+if (empty($GLOBALS['CMSXML_DEBUG']) && !is_file(__DIR__ . '/enable_debug.flag')) {
+    http_response_code(403);
+    exit('Debug requis : créez admin/enable_debug.flag ou exportez CMSXML_DEBUG=1');
+}
 
 $dirs = array($ARTICLES_DIR, $TUTORIELS_DIR);
 echo '<!doctype html><meta charset="utf-8"><title>Fix perms</title><body style="font-family:system-ui;background:#0b1220;color:#e5e7eb">';

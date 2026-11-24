@@ -6,13 +6,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check(isset($_POST['csrf']) ? $_POST['csrf'] : '');
     $u = trim((string)(isset($_POST['user']) ? $_POST['user'] : ''));
     $p = (string)(isset($_POST['pass']) ? $_POST['pass'] : '');
-    if ($u !== '' && verify_login($u, $p)) {
+    $wait = login_blocked_for();
+    if ($wait > 0) {
+        set_flash('Trop de tentatives. Réessayez dans ' . ceil($wait / 60) . ' min.', 'error');
+    } elseif ($u !== '' && verify_login($u, $p)) {
+        login_reset_failures();
+        // Nouvel identifiant de session à la connexion (anti fixation de session)
+        session_regenerate_id(true);
+        unset($_SESSION['csrf']);
         $_SESSION['user'] = $u;
         set_flash('Connexion réussie', 'success');
-        header('Location: /admin/');
+        header('Location: ' . admin_url());
         exit;
+    } else {
+        login_register_failure();
+        usleep(500000);
+        set_flash('Identifiants invalides', 'error');
     }
-    set_flash('Identifiants invalides', 'error');
 }
 
 $flash = get_flash();

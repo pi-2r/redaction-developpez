@@ -19,13 +19,46 @@ if (!function_exists('random_bytes')) {
     }
 }
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/Parsedown.php';
+require_once __DIR__ . '/ParsedownDvp.php';
+require_once __DIR__ . '/dvp_render.php';
+
+// -------- URLs --------
+// URL d'une page de l'admin, quel que soit le nom du dossier (cf. config.php).
+function admin_url($path = '') {
+    return $GLOBALS['ADMIN_URL'] . '/' . ltrim($path, '/');
+}
+// URL publique d'un projet.
+function project_url($type, $slug, $file = '') {
+    return $GLOBALS['SITE_URL'] . '/' . $type . '/' . $slug . '/' . ltrim($file, '/');
+}
+
+// -------- Page d'accueil du site --------
+function home_draft_path() { return $GLOBALS['DATA_DIR'] . '/home_draft.txt'; }
+function home_live_path() { return $GLOBALS['BASE_DIR'] . '/index.php'; }
 
 // -------- Session & Auth --------
+function is_https() {
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+}
 function ensure_session() {
     global $SESSION_NAME;
     if (session_status() !== PHP_SESSION_ACTIVE) {
         session_name($SESSION_NAME);
+        // Cookie de session : inaccessible au JavaScript, non envoyé par les
+        // requêtes POST d'un site tiers, et Secure en HTTPS.
+        @ini_set('session.use_strict_mode', '1');
+        if (PHP_VERSION_ID >= 70300) {
+            session_set_cookie_params(array(
+                'lifetime' => 0,
+                'path' => '/',
+                'secure' => is_https(),
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ));
+        } else {
+            session_set_cookie_params(0, '/; samesite=Lax', '', is_https(), true);
+        }
         session_start();
     }
 }
@@ -35,7 +68,7 @@ function is_logged_in() {
 }
 function require_login() {
     if (!is_logged_in()) {
-        header('Location: /admin/login.php');
+        header('Location: ' . admin_url('login.php'));
         exit;
     }
 }
@@ -48,7 +81,7 @@ function csrf_token() {
     return hash_hmac('sha256', $_SESSION['csrf'], (string)$secret);
 }
 function csrf_check($token) {
-    if ($token !== csrf_token()) {
+    if (!is_string($token) || !hash_equals(csrf_token(), $token)) {
         http_response_code(400);
         exit('CSRF invalide');
     }
@@ -71,10 +104,41 @@ function verify_login($user, $pass) {
     $pwds = load_passwords();
     if (!isset($pwds[$user])) return false;
     $hash = $pwds[$user];
-    if (starts_with($hash, '$2y$') || starts_with($hash, '$argon2')) {
-        if (function_exists('password_verify')) return password_verify($pass, $hash); // bcrypt/argon2
+    // Seuls les hash bcrypt/argon2 sont acceptés : un mot de passe en clair
+    // dans le fichier est refusé (générez un hash avec change_admin.sh ou
+    // php -r 'echo password_hash("motdepasse", PASSWORD_BCRYPT), "\n";').
+    if ((starts_with($hash, '$2y$') || starts_with($hash, '$2b$') || starts_with($hash, '$argon2')) && function_exists('password_verify')) {
+        return password_verify($pass, $hash);
     }
-    return hash_equals($hash, $pass);
+    log_msg('Compte "' . $user . '" ignoré : le mot de passe doit être un hash bcrypt/argon2, pas du texte en clair.');
+    return false;
+}
+// -------- Anti-bruteforce (par adresse IP, stocké dans admin/data) --------
+function login_throttle_file() {
+    $ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'cli';
+    return $GLOBALS['DATA_DIR'] . '/login-' . md5($ip) . '.json';
+}
+function login_throttle_state() {
+    $f = login_throttle_file();
+    $s = is_file($f) ? json_decode((string)@file_get_contents($f), true) : null;
+    if (!is_array($s) || !isset($s['count'], $s['first']) || (time() - $s['first']) > $GLOBALS['LOGIN_WINDOW']) {
+        $s = array('count' => 0, 'first' => time());
+    }
+    return $s;
+}
+// Nombre de secondes à attendre avant de pouvoir réessayer (0 = autorisé).
+function login_blocked_for() {
+    $s = login_throttle_state();
+    if ($s['count'] < $GLOBALS['LOGIN_MAX_ATTEMPTS']) return 0;
+    return max(1, $GLOBALS['LOGIN_WINDOW'] - (time() - $s['first']));
+}
+function login_register_failure() {
+    $s = login_throttle_state();
+    $s['count']++;
+    @file_put_contents(login_throttle_file(), json_encode($s));
+}
+function login_reset_failures() {
+    @unlink(login_throttle_file());
 }
 // -------- Slug & Paths --------
 function slugify($text) {
@@ -166,163 +230,65 @@ function xslt_transform_to_html($xmlPath) {
     $html = $proc->transformToXML($dom);
     return $html ? $html : '<!doctype html><meta charset="utf-8"><p>Erreur de transformation XSL.</p>';
 }
-function markdown_to_html($mdPath) {
+function markdown_to_html($mdPath, $slug = '', $fallbackTitle = '') {
     if (!is_file($mdPath)) return '<!doctype html><meta charset="utf-8"><p>Fichier Markdown introuvable</p>';
-    $text = file_get_contents($mdPath);
-    // Fix: Replace deprecated <center> tags which can confuse Parsedown or render poorly
-    $text = str_ireplace(array('<center>', '</center>'), array('<div style="text-align:center">', '</div>'), $text);
-    $pd = new Parsedown();
-    $body = $pd->text($text);
-    return "<!doctype html>\n<meta charset=\"utf-8\">\n<style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:20px;line-height:1.6;color:#333}img{max-width:100%;height:auto}pre{background:#f4f4f5;padding:15px;overflow-x:auto;border-radius:5px}blockquote{border-left:4px solid #e5e7eb;margin:0;padding-left:15px;color:#6b7280}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:8px;text-align:left}th{background:#f9fafb}</style>\n" . $body;
+    // Même rendu que la page publiée, avec un CSS autonome imitant le kit (PDF/ePub)
+    return dvp_standalone_page(dvp_render_markdown(file_get_contents($mdPath), $slug, $fallbackTitle));
 }
-// Wrap content between headings in BlocSection divs (developpez.com kit structure)
-function dvp_wrap_sections_in_blocs($html) {
-    $pattern = '/(<h[23]\s[^>]*>.*?<\/h[23]>)/s';
-    $parts = preg_split($pattern, $html, -1, PREG_SPLIT_DELIM_CAPTURE);
-    if ($parts === false) return $html;
-
-    $result = '';
-    $openStack = array();
-
-    for ($i = 0; $i < count($parts); $i++) {
-        $part = $parts[$i];
-
-        if (preg_match('/^<(h[23])\s/', $part, $m)) {
-            $tag = $m[1];
-
-            if ($tag === 'h2') {
-                // Close any open BlocSection1 then BlocSection0
-                while ($openStack) {
-                    $result .= '</div>';
-                    array_pop($openStack);
-                }
-                $result .= $part . '<div class="BlocSection0">';
-                $openStack[] = 0;
-            } elseif ($tag === 'h3') {
-                // Close any open BlocSection1 only
-                while ($openStack && end($openStack) === 1) {
-                    $result .= '</div>';
-                    array_pop($openStack);
-                }
-                $result .= $part . '<div class="BlocSection1">';
-                $openStack[] = 1;
-            }
-        } else {
-            $result .= $part;
-        }
+// Date en français (« 23 novembre 2026 ») sans strftime(), obsolète depuis PHP 8.1.
+function dvp_date_fr($ts = null) {
+    $mois = array(1=>'janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre');
+    if ($ts === null) $ts = time();
+    return date('d', $ts) . ' ' . $mois[(int)date('n', $ts)] . ' ' . date('Y', $ts);
+}
+// Accès aux exports des projets privés : un .htaccess dans le dossier du projet
+// bloque PDF/ZIP/ePub tant que l'article est privé (index.php reste protégé par le jeton).
+function project_is_private($type, $slug) {
+    $paths = project_paths($type, $slug);
+    $metaFile = $paths['dir'] . '/meta.json';
+    if (!is_file($metaFile)) return false;
+    $meta = json_decode((string)file_get_contents($metaFile), true);
+    return is_array($meta) && !empty($meta['is_private']);
+}
+function apply_project_access_rules($type, $slug) {
+    $paths = project_paths($type, $slug);
+    $file = $paths['dir'] . '/.htaccess';
+    $marker = '# CMS: article prive';
+    if (project_is_private($type, $slug)) {
+        $rules = $marker . " - exports bloques\n<FilesMatch \"\\.(pdf|zip|epub|mobi|azw|azw3)$\">\n" . htaccess_deny_block() . "</FilesMatch>\n";
+        return ensure_htaccess($paths['dir'], $rules);
     }
-
-    // Close remaining open divs
-    while ($openStack) {
-        $result .= '</div>';
-        array_pop($openStack);
+    if (is_file($file) && strpos((string)file_get_contents($file), $marker) === 0) {
+        return @unlink($file);
     }
-
-    return $result;
+    return true;
+}
+// Code PHP de protection inséré en tête de l'index.php d'un projet privé.
+function private_guard_php($type, $slug) {
+    $paths = project_paths($type, $slug);
+    $metaFile = $paths['dir'] . '/meta.json';
+    $meta = is_file($metaFile) ? json_decode((string)file_get_contents($metaFile), true) : array();
+    if (!is_array($meta) || empty($meta['is_private']) || empty($meta['private_token'])) return '';
+    $token = var_export((string)$meta['private_token'], true);
+    return "if (!isset(\$_GET['token']) || !is_string(\$_GET['token']) || !hash_equals($token, \$_GET['token'])) {\n"
+        . "    include __DIR__ . '/../../index.php';\n"
+        . "    exit;\n"
+        . "}\n"
+        . "header('X-Robots-Tag: noindex, nofollow');\n\n";
 }
 function generate_index_php($type, $slug) {
     global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
     if (is_file($paths['md'])) {
-        $mdContent = file_get_contents($paths['md']);
-        // Fix: Replace deprecated <center> tags
-        $mdContent = str_ireplace(array('<center>', '</center>'), array('<div style="text-align:center">', '</div>'), $mdContent);
-        $pd = new Parsedown();
-        $html = $pd->text($mdContent);
-
-        $dom = new DOMDocument();
-        libxml_use_internal_errors(true);
-        $dom->loadHTML('<?xml encoding="UTF-8"><div>' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-        libxml_clear_errors();
-
-        $xpath = new DOMXPath($dom);
-        $headers = $xpath->query('//h1|//h2|//h3');
-
-        $tocNav = '<nav class="nav-sommaire" role="navigation">
-            <h2 class="TitreHeader ToggleGecko">Table des mati&egrave;res<img class="ToggleImgPlier" title="Plier" alt="Plier" src="/template/kit/fleche-haut-bleue.png"/><img class="ToggleImgDeplier" title="Déplier" alt="Déplier" src="/template/kit/fleche-bas-bleue.png" style="display:none;"/></h2>
-            <ul id="nav_sommaire_ul_principal" class="nav-sommaire-ul">';
-
-        $hCount = 0;
-        $title = 'Titre inconnu';
-        $tocItems = array();
-
-        foreach ($headers as $header) {
-            $headerText = $header->textContent;
-
-            if ($header->tagName === 'h1' && $hCount === 0) {
-                $title = $headerText;
-                $hCount++;
-                $header->parentNode->removeChild($header);
-                continue;
-            }
-
-            $id = 'header-' . $hCount;
-            $header->setAttribute('id', $id);
-
-            // Add CSS section classes matching developpez.com kit
-            if ($header->tagName === 'h2') {
-                $header->setAttribute('class', 'TitreSection0');
-            } elseif ($header->tagName === 'h3') {
-                $header->setAttribute('class', 'TitreSection1');
-            }
-
-            $a = $dom->createElement('a');
-            $a->setAttribute('class', 'HautPage');
-            $a->setAttribute('href', '#');
-            $a->setAttribute('title', 'Haut de page');
-            $a->nodeValue = '▲';
-            $header->appendChild($a);
-
-            $level = ($header->tagName === 'h3' || $header->tagName === 'h4') ? 1 : 0;
-            $tocItems[] = array('level' => $level, 'id' => $id, 'text' => $headerText);
-            $hCount++;
-        }
-
-        // Build nested TOC matching developpez.com structure
-        $tocGroups = array();
-        $currentGroup = null;
-        foreach ($tocItems as $item) {
-            if ($item['level'] === 0) {
-                if ($currentGroup !== null) { $tocGroups[] = $currentGroup; }
-                $currentGroup = array('main' => $item, 'children' => array());
-            } else {
-                if ($currentGroup !== null) {
-                    $currentGroup['children'][] = $item;
-                } else {
-                    $tocGroups[] = array('main' => $item, 'children' => array());
-                }
-            }
-        }
-        if ($currentGroup !== null) { $tocGroups[] = $currentGroup; }
-
-        foreach ($tocGroups as $group) {
-            $main = $group['main'];
-            $indentClass = $main['level'] === 0 ? 'summaryIndent0' : 'summaryIndent1';
-            $tocNav .= '<li><a class="' . $indentClass . '" href="#' . $main['id'] . '">' . htmlspecialchars($main['text']) . '</a>';
-            if (!empty($group['children'])) {
-                $tocNav .= '<ul class="nav-sommaire-ul">';
-                foreach ($group['children'] as $child) {
-                    $tocNav .= '<li><a class="summaryIndent1" href="#' . $child['id'] . '">' . htmlspecialchars($child['text']) . '</a></li>';
-                }
-                $tocNav .= '</ul>';
-            }
-            $tocNav .= '</li>';
-        }
-        $toc = $tocNav . '</ul></nav>';
-
-        $bodyDiv = $dom->getElementsByTagName('div')->item(0);
-        $processedHtml = '';
-        foreach ($bodyDiv->childNodes as $child) {
-            $processedHtml .= $dom->saveHTML($child);
-        }
-
-        // Wrap sections in BlocSection divs matching developpez.com kit
-        $processedHtml = dvp_wrap_sections_in_blocs($processedHtml);
+        // Conversion au format du kit developpez (voir dvp_render.php)
+        $r = dvp_render_markdown(file_get_contents($paths['md']), $slug, project_title_from_xml($paths['xml']));
+        $title = $r['title'];
+        $toc = dvp_toc_html($r['toc']);
+        $processedHtml = $r['html'];
 
         $author = isset($GLOBALS['DEFAULT_AUTHOR']) ? $GLOBALS['DEFAULT_AUTHOR'] : (isset($_SESSION['user']) ? $_SESSION['user'] : 'Anonyme');
-        $date = date('d F Y');
         $year = date('Y');
-        $desc = $title;
+        $desc = $r['desc'];
 
         $rootUrl = isset($GLOBALS['WEBSITE_ROOT_URL']) ? rtrim($GLOBALS['WEBSITE_ROOT_URL'], '/') : 'https://www.developpez.com';
         $url = $rootUrl . "/$type/$slug/";
@@ -331,32 +297,30 @@ function generate_index_php($type, $slug) {
         $defaultLicense = isset($GLOBALS['DEFAULT_LICENSE']) ? $GLOBALS['DEFAULT_LICENSE'] : '2';
 
         // Check metadata for private access
-        $metaFile = $paths['dir'] . '/meta.json';
-        $meta = array();
-        if (is_file($metaFile)) {
-            $meta = json_decode(file_get_contents($metaFile), true);
-        }
-        $isPrivate = !empty($meta['is_private']);
-        $privateToken = isset($meta['private_token']) ? $meta['private_token'] : '';
+        $isPrivate = project_is_private($type, $slug);
+
+        // Les chaînes injectées dans le code PHP passent par var_export() :
+        // un titre contenant $, " ou \ reste du texte (addslashes laissait
+        // PHP interpréter « {$…} » dans les guillemets doubles).
+        $phpTitle = var_export((string)$title, true);
+        $phpDesc = var_export((string)$desc, true);
+        $phpAuthor = var_export((string)$author, true);
+        $phpUrl = var_export((string)$url, true);
 
         $php = "<?php\n";
-
-        if ($isPrivate && $privateToken) {
-            $php .= "if (!isset(\$_GET['token']) || \$_GET['token'] !== '$privateToken') {\n";
-            $php .= "    include __DIR__ . '/../../index.php';\n";
-            $php .= "    exit;\n";
-            $php .= "}\n\n";
-        }
+        $php .= private_guard_php($type, $slug);
 
         $php .= "include \$_SERVER['DOCUMENT_ROOT'].\"/template/fonctions.php\";\n\n";
-        $php .= "\$rubrique = $defaultRubric;\n";
-        $php .= "\$meta_description = \"" . addslashes($desc) . "\";\n";
-        $php .= "\$titre_page = \"" . addslashes($title) . "\";\n";
-        $php .= "\$Auteur = \"" . addslashes($author) . "\";\n";
-        $php .= "\$Licence = \"$defaultLicense\";\n";
+        $php .= "\$rubrique = " . (int)$defaultRubric . ";\n";
+        $php .= "\$meta_description = $phpDesc;\n";
+        $php .= "\$titre_page = $phpTitle;\n";
+        $php .= "\$Auteur = $phpAuthor;\n";
+        $php .= "\$Licence = " . var_export((string)$defaultLicense, true) . ";\n";
         $php .= "\$Annee = \"$year\";\n";
         $php .= <<<'DATEPHP'
 // Lecture du fichier .date pour les dates de publication
+$_moisFr = array(1=>'janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre');
+$_aujourdhui = date('d') . ' ' . $_moisFr[(int)date('n')] . ' ' . date('Y');
 $_dateFile = __DIR__ . '/.date';
 if (is_file($_dateFile)) {
     $_dateLines = file($_dateFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -365,11 +329,10 @@ if (is_file($_dateFile)) {
         $_parts = explode('=', $_dl, 2);
         if (count($_parts) === 2) { $_dates[trim($_parts[0])] = trim($_parts[1]); }
     }
-    $dateBrute['date'] = !empty($_dates['date']) ? $_dates['date'] : date('d F Y');
+    $dateBrute['date'] = !empty($_dates['date']) ? $_dates['date'] : $_aujourdhui;
     $dateBrute['miseajour'] = !empty($_dates['miseajour']) ? $_dates['miseajour'] : ' ';
 } else {
-    setlocale(LC_TIME, 'fr_FR.UTF-8', 'fr_FR', 'fra');
-    $dateBrute['date'] = strftime('%d %B %Y');
+    $dateBrute['date'] = $_aujourdhui;
     $dateBrute['miseajour'] = ' ';
 }
 
@@ -407,21 +370,21 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 ';
 EOD;
-        $php .= "\n";
+        $php .= "\n\$gabarit_extrahead .= " . var_export('<style>' . dvp_extra_css() . '</style>', true) . ";\n";
         $php .= "\$gabarit_js = array('/template/kit/developpez-kit-generation.js', '/template/kit/lightbox.js', '/template/kit/fonctions-kit.js');\n";
         $php .= "\$gabarit_css = array('/template/kit/developpez-kit-generation.css', '/template/kit/code.css', '/template/kit/lightbox.css');\n";
 
-        $php .= "\$open_graph_meta = array('type'=>'article', 'title'=>\"" . addslashes($title) . "\", 'image'=>'https://www.developpez.com/template/images/logo.png', 'url'=>\"$url\", 'locale'=>'fr_FR', 'site_name'=>'Developpez.com');\n";
-        $php .= "\$twitter_meta = array('card'=>'summary', 'url'=>\"$url\", 'description'=>\"" . addslashes($desc) . "\", 'title'=>\"" . addslashes($title) . "\", 'image'=>'https://www.developpez.com/template/images/logo.png');\n\n";
+        $php .= "\$open_graph_meta = array('type'=>'article', 'title'=>$phpTitle, 'image'=>'https://www.developpez.com/template/images/logo.png', 'url'=>$phpUrl, 'locale'=>'fr_FR', 'site_name'=>'Developpez.com');\n";
+        $php .= "\$twitter_meta = array('card'=>'summary', 'url'=>$phpUrl, 'description'=>$phpDesc, 'title'=>$phpTitle, 'image'=>'https://www.developpez.com/template/images/logo.png');\n\n";
 
         $php .= <<<'EOD'
 function insertion_tag( $MaDate, $tag ) { if ( empty($MaDate) ) { return; } list($annee, $mois, $jour) = explode('-', $MaDate); if ( empty($annee) or empty($mois) or empty($jour) ) { return; } $time_balise = mktime(0,0,0,$mois,$jour,$annee); $time_jour = time(); $delai = 15 * 24 * 60 * 60; if ( ($time_jour - $time_balise) < $delai ) { if ( $tag == "new" ) { return '<script type="text/javascript">document.write(" <span class=\'sommaireQuestionNouveau\'>[Nouveau]</span>");</script>'; } elseif ( $tag == "maj" ) { return '<script type="text/javascript">document.write(" <span class=\'sommaireQuestionAJour\'>[Mise &agrave; jour]</span>");</script>'; } } return; }
 function CutName($vTxt, $Car) { while(strlen($vTxt) > $Car) return substr($vTxt, 0, $Car) . "..."; return $vTxt; }
-function unichr($u) { if ( intval($u) >= 127 && intval($u) <= 159 ) { return chr($u - 127 + 32); } return mb_convert_encoding('&#' . intval($u) . ';', 'UTF-8', 'HTML-ENTITIES'); }
-function new_crypt($phrase) { $key = "le_club_des_developeur"; $output = ""; for ($c = 0 ; $c < strlen($phrase) ; $c++) { $output = $output.unichr(ord($phrase{$c}) + ord($key{$c % strlen($key)})); } return $output; }
+function unichr($u) { if ( intval($u) >= 127 && intval($u) <= 159 ) { return chr($u - 127 + 32); } return html_entity_decode('&#' . intval($u) . ';', ENT_QUOTES, 'UTF-8'); }
+function new_crypt($phrase) { $key = "le_club_des_developeur"; $output = ""; for ($c = 0 ; $c < strlen($phrase) ; $c++) { $output = $output.unichr(ord($phrase[$c]) + ord($key[$c % strlen($key)])); } return $output; }
 function VerifierAdresseMail($email) { $Syntaxe='#^[\w.-]+@[\w.-]+\.[a-zA-Z]{2,6}$#'; if ( preg_match($Syntaxe,$email) ) { return true; } else { return false; } }
 function RetournerMailOuAutre($message) { if ( VerifierAdresseMail($message) ) { return 'contact'; } else { return $message; } }
-function encrypt_email($email, $texte, $titre="") { if (preg_match("/^mailto:/i", $email)) { $email_parts = explode('mailto:', $email); $email = $email_parts[1]; } $email_parts = explode('@', $email); $javascript = "<script type=\"text/javascript\">\n"; $javascript .= "<!--\n"; $javascript .= "Ch=new Array(4);Res=new Array(4);\n"; $javascript .= "Ch[0]='le_club_des_developeur';"; $javascript .= "Ch[1]='" . new_crypt("mailto") . "';\n"; $javascript .= "Ch[2]='" . new_crypt($email_parts{0} . "@") . "';"; $javascript .= "Ch[3]='" . new_crypt($email_parts{1}) . "';\n"; $javascript .= "for(y=1;y<4;y++){Res[y]=\"\";for(x=0;x<Ch[y].length;x++)\n"; $javascript .= "{"; $javascript .= "cryptChar = Ch[y].charCodeAt(x);\n"; $javascript .= "if (cryptChar >= 32 && cryptChar <= 64 )\n"; $javascript .= "cryptChar = cryptChar-32+127;\n"; $javascript .= "Res[y]+=String.fromCharCode(cryptChar-Ch[0].charCodeAt(x%Ch[0].length));}"; $javascript .= "}\n"; $javascript .= "var st = '<a class=\"'"; if ( $titre != '' ) { $javascript .= " + ' tooltip blue-tooltip' "; } $javascript .= " + ' lienArticle mailto\"' "; $javascript .= " + 'href=\"' + Res[1] + ':' + Res[2] + Res[3] + '\"' "; $javascript .= " + '>'"; $javascript .= " + " . "'" . RetournerMailOuAutre( addslashes($texte) ) . "'"; if ( $titre != '' ) { $javascript .= " + '<span>" . RetournerMailOuAutre($titre) . "</span>' "; } $javascript .= " + '<\/a>'"; $javascript .= ";\n"; $javascript .= "document.write(st);\n"; $javascript .= "//-->\n"; $javascript .= "</script>"; return $javascript; }
+function encrypt_email($email, $texte, $titre="") { if (preg_match("/^mailto:/i", $email)) { $email_parts = explode('mailto:', $email); $email = $email_parts[1]; } $email_parts = explode('@', $email); $javascript = "<script type=\"text/javascript\">\n"; $javascript .= "<!--\n"; $javascript .= "Ch=new Array(4);Res=new Array(4);\n"; $javascript .= "Ch[0]='le_club_des_developeur';"; $javascript .= "Ch[1]='" . new_crypt("mailto") . "';\n"; $javascript .= "Ch[2]='" . new_crypt($email_parts[0] . "@") . "';"; $javascript .= "Ch[3]='" . new_crypt($email_parts[1]) . "';\n"; $javascript .= "for(y=1;y<4;y++){Res[y]=\"\";for(x=0;x<Ch[y].length;x++)\n"; $javascript .= "{"; $javascript .= "cryptChar = Ch[y].charCodeAt(x);\n"; $javascript .= "if (cryptChar >= 32 && cryptChar <= 64 )\n"; $javascript .= "cryptChar = cryptChar-32+127;\n"; $javascript .= "Res[y]+=String.fromCharCode(cryptChar-Ch[0].charCodeAt(x%Ch[0].length));}"; $javascript .= "}\n"; $javascript .= "var st = '<a class=\"'"; if ( $titre != '' ) { $javascript .= " + ' tooltip blue-tooltip' "; } $javascript .= " + ' lienArticle mailto\"' "; $javascript .= " + 'href=\"' + Res[1] + ':' + Res[2] + Res[3] + '\"' "; $javascript .= " + '>'"; $javascript .= " + " . "'" . RetournerMailOuAutre( addslashes($texte) ) . "'"; if ( $titre != '' ) { $javascript .= " + '<span>" . RetournerMailOuAutre($titre) . "</span>' "; } $javascript .= " + '<\/a>'"; $javascript .= ";\n"; $javascript .= "document.write(st);\n"; $javascript .= "//-->\n"; $javascript .= "</script>"; return $javascript; }
 function web_to_mobile($video) { return preg_replace('/http:\/\/www\.youtube\.com/', 'http://m.youtube.com', $video); }
 EOD;
         $php .= "\n\ninclude(\$_SERVER['DOCUMENT_ROOT'] . '/template/entete.php');\n?>\n";
@@ -468,31 +431,32 @@ EOD;
         $php .= "                </section>\n";
         $php .= "                <section class=\"SectionBookmarks\">\n";
         $php .= "                    <h2 class=\"TitreHeader\">Liens&nbsp;sociaux</h2>\n";
-        $php .= "                    <div class=\"InfoBookmarks\"><?php echo DoBookMarks(\"" . addslashes($title) . "\",'$url'); ?></div>\n";
+        $php .= "                    <div class=\"InfoBookmarks\"><?php echo DoBookMarks(" . $phpTitle . ", " . $phpUrl . "); ?></div>\n";
         $php .= "                </section></div><section itemprop=\"articleBody\" class=\"articleBody\">\n\n";
         $php .= $processedHtml . "\n\n";
-        $php .= "            </section><section class=\"articleBody\"><p>Vous avez aimé ce tutoriel ? Alors partagez-le en cliquant sur les boutons suivants : <?php echo DoBookMarks(\"" . addslashes($title) . "\",'$url'); ?></p></section></div>\n\n";
+        $php .= "            </section><section class=\"articleBody\"><p>Vous avez aimé ce tutoriel ? Alors partagez-le en cliquant sur les boutons suivants : <?php echo DoBookMarks(" . $phpTitle . ", " . $phpUrl . "); ?></p></section></div>\n\n";
         $php .= "    </section>\n";
         $php .= "</article>\n\n";
         $php .= "<?php\ninclude(\$_SERVER[\"DOCUMENT_ROOT\"].\"/template/pied.php\");\n?>\n";
 
         return $php;
     }
-    $relXml = basename($paths['xml']);
-    return "<?php\nheader('Content-Type: text/html; charset=utf-8');\n\$xml = __DIR__ . '/{$relXml}';\n\$xsl = __DIR__ . '/../../admin/xsl/default.xsl';\nif (!is_file(\$xml) || !is_file(\$xsl)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$dom = new DOMDocument();\n\$dom->load(\$xml);\n\$x = new DOMDocument();\n\$x->load(\$xsl);\n\$p = new XSLTProcessor();\n\$p->importStylesheet(\$x);\necho \$p->transformToXML(\$dom);\n";
+    $relXml = var_export('/' . basename($paths['xml']), true);
+    // Chemin de la feuille XSL relatif au nom réel du dossier admin (renommable)
+    $relXsl = var_export('/../../' . $GLOBALS['ADMIN_DIR_NAME'] . '/xsl/default.xsl', true);
+    return "<?php\n" . private_guard_php($type, $slug) . "header('Content-Type: text/html; charset=utf-8');\n\$xml = __DIR__ . {$relXml};\n\$xsl = __DIR__ . {$relXsl};\nif (!is_file(\$xml) || !is_file(\$xsl)) { http_response_code(500); echo 'Ressource manquante'; exit; }\n\$dom = new DOMDocument();\n\$dom->load(\$xml);\n\$x = new DOMDocument();\n\$x->load(\$xsl);\n\$p = new XSLTProcessor();\n\$p->importStylesheet(\$x);\necho \$p->transformToXML(\$dom);\n";
 }
 // -------- Publication --------
 function publish_all_formats($type, $slug) {
-    ini_set('display_errors', 1);
-    ini_set('display_startup_errors', 1);
-    error_reporting(E_ALL);
+    // Pas de display_errors ici : un simple avertissement affiché empêchait la
+    // redirection de publish.php (« headers already sent »). Les erreurs vont au log.
     global $BIN_WKHTMLTOPDF, $BIN_EBOOK_CONVERT;
     $paths = project_paths($type, $slug);
     $dir = $paths['dir'];
 
     $sourceFile = '';
     if (is_file($paths['md'])) {
-        $html = markdown_to_html($paths['md']);
+        $html = markdown_to_html($paths['md'], $slug, project_title_from_xml($paths['xml']));
         $sourceFile = $paths['md'];
     } elseif (is_file($paths['xml'])) {
         $html = xslt_transform_to_html($paths['xml']);
@@ -505,11 +469,11 @@ function publish_all_formats($type, $slug) {
     file_put_contents($htmlPath, $html);
     write_file_atomic($paths['index'], generate_index_php($type, $slug));
     if (isset($GLOBALS['FORCE_FILE_MODE'])) { @chmod($paths['index'], $GLOBALS['FORCE_FILE_MODE']); }
+    apply_project_access_rules($type, $slug);
 
     // Gestion du fichier .date
     $dateFile = $paths['date'];
-    setlocale(LC_TIME, 'fr_FR.UTF-8', 'fr_FR', 'fra');
-    $now = strftime('%d %B %Y');
+    $now = dvp_date_fr();
     if (is_file($dateFile)) {
         // Article déjà publié : conserver la date originale, mettre à jour miseajour
         $dateContent = file_get_contents($dateFile);
@@ -568,7 +532,8 @@ function rrmdir($dir) {
     foreach ($items as $it) {
         if ($it === '.' || $it === '..') continue;
         $path = $dir . '/' . $it;
-        if (is_dir($path)) rrmdir($path); else @unlink($path);
+        // Un lien symbolique est supprimé, jamais suivi (sinon on viderait sa cible)
+        if (is_dir($path) && !is_link($path)) rrmdir($path); else @unlink($path);
     }
     return @rmdir($dir);
 }

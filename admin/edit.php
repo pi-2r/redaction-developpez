@@ -3,7 +3,7 @@ require_once __DIR__ . '/utils.php';
 require_login();
 $type = (isset($_GET['type']) ? $_GET['type'] : 'tutoriels') === 'articles' ? 'articles' : 'tutoriels';
 $slug = clean_path_param((string)(isset($_GET['slug']) ? $_GET['slug'] : ''));
-if ($slug === '') { set_flash('Projet introuvable', 'error'); header('Location: /admin/'); exit; }
+if ($slug === '') { set_flash('Projet introuvable', 'error'); header('Location: ' . admin_url()); exit; }
 $paths = project_paths($type, $slug);
 
 $metaFile = $paths['dir'] . '/meta.json';
@@ -30,7 +30,9 @@ if ($mode === 'md') {
     if ($isMd) {
         $content = file_get_contents($paths['md']);
     } else {
-        $content = "# $slug\n\nCommencez à écrire...";
+        // Titre saisi à la création du projet (et non le slug)
+        $initialTitle = project_title_from_xml($paths['xml']);
+        $content = '# ' . ($initialTitle !== '' ? $initialTitle : $slug) . "\n\nCommencez à écrire...";
     }
 } else {
     $content = file_get_contents($paths['xml']);
@@ -40,7 +42,7 @@ if ($content === false) $content = '';
 $flash = get_flash();
 ?><!doctype html>
 <meta charset="utf-8">
-<title>Éditer - <?=$slug?></title>
+<title>Éditer - <?=htmlspecialchars($slug)?></title>
 <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
 <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
 <style>
@@ -83,7 +85,7 @@ input:focus + .slider {box-shadow: 0 0 1px #2196F3;}
 input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transform: translateX(20px);transform: translateX(20px);}
 </style>
 <header class="header">
-  <div><a href="/admin/">← Retour</a></div>
+  <div><a href="<?=htmlspecialchars(admin_url())?>">← Retour</a></div>
   <div style="display:flex;align-items:center;gap:15px">
       <div><?=$type?> / <strong><?=$slug?></strong> <span class="small">(<?=$mode?>)</span></div>
       <div style="display:flex;align-items:center;gap:8px;background:#1f2937;padding:4px 8px;border-radius:8px">
@@ -99,7 +101,7 @@ input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transfor
       </div>
   </div>
   <div>
-    <form style="display:inline" method="post" action="/admin/publish.php">
+    <form style="display:inline" method="post" action="<?=htmlspecialchars(admin_url('publish.php'))?>">
       <input type="hidden" name="csrf" value="<?=htmlspecialchars(csrf_token())?>">
       <input type="hidden" name="type" value="<?=htmlspecialchars($type)?>">
       <input type="hidden" name="slug" value="<?=htmlspecialchars($slug)?>">
@@ -110,7 +112,7 @@ input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transfor
 <div class="container" id="container">
   <div class="panel" id="leftPanel" style="width:50%">
     <div class="toolbar">
-      <input type="file" id="imgUpload" style="display:none" accept="image/*">
+      <input type="file" id="imgUpload" style="display:none" accept=".jpg,.jpeg,.png,.gif,.webp">
       <button class="btn" type="button" onclick="triggerUpload()">📷 Upload Image</button>
       <button class="btn" type="button" onclick="openImgModal()">📂 Gérer Images</button>
       <button class="btn" type="button" onclick="insertDoubleImage()" title="2 images côte à côte">🖼️ 2 Images</button>
@@ -132,7 +134,7 @@ input:checked + .slider:before {-webkit-transform: translateX(20px);-ms-transfor
     <div class="toolbar">
       <span class="small">Aperçu</span>
       <button class="btn" type="button" onclick="refreshPreview()">Rafraîchir</button>
-      <a class="btn" href="/<?=$type?>/<?=$slug?>/index.php" target="_blank">Ouvrir la page</a>
+      <a class="btn" href="<?=htmlspecialchars(project_url($type, $slug, 'index.php'))?>" target="_blank">Ouvrir la page</a>
     </div>
     <iframe id="preview"></iframe>
   </div>
@@ -153,6 +155,9 @@ const ta = document.getElementById('editor');
 const pv = document.getElementById('preview');
 const statusEl = document.getElementById('status');
 const mode = '<?=$mode?>';
+const ADMIN_URL = <?=json_encode(admin_url())?>;   // ex. "/admin/" (dossier renommable)
+const PROJECT_URL = <?=json_encode(project_url($type, $slug))?>; // ex. "/tutoriels/mon-slug/"
+const CSRF = <?=json_encode(csrf_token())?>;
 let easyMDE = null;
 let saveTimer;
 
@@ -186,12 +191,15 @@ function triggerPreview(){
 function refreshPreview(){
   const val = easyMDE ? easyMDE.value() : ta.value;
   const body = new FormData();
+  body.append('csrf', CSRF);
+  body.append('type', <?=json_encode($type)?>);
+  body.append('slug', <?=json_encode($slug)?>);
   body.append(mode, val);
-  fetch('/admin/preview.php', {method:'POST', body}).then(r=>r.text()).then(html=>{
+  fetch(ADMIN_URL + 'preview.php', {method:'POST', body}).then(r=>r.text()).then(html=>{
     const doc = pv.contentDocument || pv.contentWindow.document;
-    const baseUrl = window.location.origin + '/<?=$type?>/<?=$slug?>/';
     doc.open();
-    doc.write('<base href="' + baseUrl + '">');
+    // En Markdown, preview.php fournit sa propre balise <base> (dans <head>)
+    if (mode !== 'md') doc.write('<base href="' + window.location.origin + PROJECT_URL + '">');
     doc.write(html);
     doc.close();
   }).catch(()=>{});
@@ -222,7 +230,7 @@ function saveContent(){
   body.append('type', '<?=htmlspecialchars($type)?>');
   body.append('slug', '<?=htmlspecialchars($slug)?>');
   body.append(mode, val);
-  fetch('/admin/save.php', {method:'POST', body}).then(r=>r.json()).then(j=>{
+  fetch(ADMIN_URL + 'save.php', {method:'POST', body}).then(r=>r.json()).then(j=>{
     statusEl.textContent = j.ok ? 'Sauvegardé' : 'Erreur: ' + (j.error||'');
   }).catch(()=>{statusEl.textContent='Erreur réseau';});
 }
@@ -247,7 +255,7 @@ function uploadFile(file) {
     fd.append('slug', '<?=htmlspecialchars($slug)?>');
     fd.append('file', file);
 
-    fetch('/admin/upload.php', {method:'POST', body: fd})
+    fetch(ADMIN_URL + 'upload.php', {method:'POST', body: fd})
     .then(r => {
         if (!r.ok) return r.text().then(t => { throw new Error(t) });
         return r.json();
@@ -323,7 +331,7 @@ function closeImgModal() {
 function loadImages() {
     const list = document.getElementById('imgList');
     list.innerHTML = 'Chargement...';
-    fetch(`/admin/list_images.php?type=<?=htmlspecialchars($type)?>&slug=<?=htmlspecialchars($slug)?>`)
+    fetch(ADMIN_URL + `list_images.php?type=<?=htmlspecialchars($type)?>&slug=<?=htmlspecialchars($slug)?>`)
     .then(r => r.json())
     .then(imgs => {
         if (imgs.length === 0) {
@@ -338,9 +346,8 @@ function loadImages() {
             // Ideally list_images.php returns full relative URL or we construct it carefully.
             // list_images.php returns 'url' as './images/filename'.
             // But for the <img> src in the modal, we need a path relative to the admin page OR absolute.
-            // The admin page is at /admin/edit.php.
             // The images are at /type/slug/images/filename.
-            const previewUrl = `/${'<?=htmlspecialchars($type)?>'}/${'<?=htmlspecialchars($slug)?>'}/images/${img.name}`;
+            const previewUrl = PROJECT_URL + 'images/' + encodeURIComponent(img.name);
 
             div.innerHTML = `
                 <div style="display:flex;align-items:center;overflow:hidden">
@@ -364,7 +371,7 @@ function deleteImage(filename) {
     fd.append('type', '<?=htmlspecialchars($type)?>');
     fd.append('slug', '<?=htmlspecialchars($slug)?>');
     fd.append('filename', filename);
-    fetch('/admin/delete_image.php', {method:'POST', body:fd})
+    fetch(ADMIN_URL + 'delete_image.php', {method:'POST', body:fd})
     .then(r => r.json())
     .then(j => {
         if(j.ok) loadImages();
@@ -415,7 +422,7 @@ function togglePrivate() {
     fd.append('slug', '<?=htmlspecialchars($slug)?>');
     fd.append('is_private', isPrivate ? 1 : 0);
 
-    fetch('/admin/save_meta.php', {method:'POST', body:fd})
+    fetch(ADMIN_URL + 'save_meta.php', {method:'POST', body:fd})
     .then(r=>r.json())
     .then(j=>{
         if(j.ok) {
@@ -436,7 +443,7 @@ function togglePrivate() {
 }
 
 function updatePrivateUrl(token) {
-    const baseUrl = window.location.origin + '/<?=$type?>/<?=$slug?>/index.php';
+    const baseUrl = window.location.origin + PROJECT_URL + 'index.php';
     const url = baseUrl + '?token=' + token;
     document.getElementById('privateUrl').value = url;
 }
@@ -450,7 +457,7 @@ function copyPrivateUrl() {
 }
 
 <?php if ($isPrivate && $privateToken): ?>
-updatePrivateUrl('<?=$privateToken?>');
+updatePrivateUrl(<?=json_encode((string)$privateToken)?>);
 <?php endif; ?>
 </script>
 

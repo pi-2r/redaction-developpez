@@ -8,60 +8,42 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-try {
-    csrf_check(isset($_POST['csrf']) ? $_POST['csrf'] : '');
-} catch (Exception $e) {
+$token = isset($_SERVER['HTTP_X_CSRF_TOKEN']) ? $_SERVER['HTTP_X_CSRF_TOKEN'] : (isset($_POST['csrf']) ? $_POST['csrf'] : '');
+if (!is_string($token) || !hash_equals(csrf_token(), $token)) {
     echo json_encode(array('ok'=>false, 'error'=>'CSRF invalide'));
     exit;
 }
 
 $action = isset($_POST['action']) ? $_POST['action'] : '';
-$draftPath = __DIR__ . '/home_draft.php';
-$livePath = __DIR__ . '/../index.php';
-$metaFile = __DIR__ . '/home_meta.json';
+// Le brouillon est stocké en .txt dans admin/data (protégé par .htaccess) :
+// auparavant admin/home_draft.php était exécutable directement depuis le web.
+$draftPath = home_draft_path();
+$livePath = home_live_path();
 
 try {
     if ($action === 'save') {
-        $content = isset($_POST['content']) ? $_POST['content'] : '';
-        
-        // Save draft using atomic write from utils (handles permissions)
+        $content = isset($_POST['content']) ? (string)$_POST['content'] : '';
         if (!write_file_atomic($draftPath, $content)) {
             throw new Exception('Impossible d\'écrire le fichier brouillon (permissions ?)');
         }
-
-        // Ensure token exists
-        $meta = array();
-        if (file_exists($metaFile)) {
-            $meta = json_decode(file_get_contents($metaFile), true);
-        }
-        if (empty($meta['token'])) {
-            // Use legacy_random_bytes if available for max compatibility, or random_bytes
-            $bytes = function_exists('legacy_random_bytes') ? legacy_random_bytes(16) : random_bytes(16);
-            $meta['token'] = bin2hex($bytes);
-            if (!write_file_atomic($metaFile, json_encode($meta))) {
-                 // Non-fatal, but good to know
-            }
-        }
-
-        echo json_encode(array('ok'=>true, 'token'=>$meta['token']));
+        echo json_encode(array('ok'=>true));
         exit;
 
     } elseif ($action === 'publish') {
-        
-        if (!file_exists($draftPath)) {
+        if (!is_file($draftPath)) {
             throw new Exception('Aucun brouillon à publier');
         }
-
         $content = file_get_contents($draftPath);
-        
-        // Backup
-        if (file_exists($livePath)) {
-            @copy($livePath, $livePath . '.bak-' . date('Ymd-His'));
+
+        // Sauvegarde dans admin/data (pas à la racine web, où un .bak serait téléchargeable)
+        if (is_file($livePath)) {
+            @copy($livePath, $GLOBALS['DATA_DIR'] . '/index.php.bak-' . date('Ymd-His'));
         }
 
         if (!write_file_atomic($livePath, $content)) {
             throw new Exception('Impossible d\'écrire le fichier public (permissions ?)');
         }
+        @unlink($draftPath);
 
         echo json_encode(array('ok'=>true));
         exit;

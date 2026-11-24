@@ -25,7 +25,7 @@ function owner_str($path){
 <style>body{font-family:system-ui;background:#0b1220;color:#e5e7eb;margin:0;padding:20px}a{color:#3b82f6;text-decoration:none}.box{max-width:1000px;margin:0 auto}.card{background:#111827;padding:16px;border-radius:12px;margin-bottom:18px}table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border:1px solid #1f2937;font-size:13px}th{background:#1f2937;text-align:left}.msg{padding:10px;border-radius:8px;margin-bottom:15px}.ok{background:#052e1a;color:#86efac}.err{background:#3b0a0a;color:#fecaca}.btn{background:#3b82f6;color:#fff;border:0;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px}form{margin:0}</style>
 <div class="box">
   <h1>Permissions projets</h1>
-  <p><a href="/admin/">← Retour admin</a></p>
+  <p><a href="<?=htmlspecialchars(admin_url())?>">← Retour admin</a></p>
   <?php if ($error): ?><div class="msg err"><?=htmlspecialchars($error)?></div><?php endif; ?>
   <?php if ($result && $result['ok']): ?><div class="msg ok">Réglé: dossiers <?=intval($result['dirs'])?> | fichiers <?=intval($result['files'])?> | erreurs <?=intval($result['errors'])?></div><?php endif; ?>
   <?php foreach ($types as $type): $list = list_projects($type); ?>

@@ -47,6 +47,9 @@ if (isset($_POST['is_private'])) {
 if (file_put_contents($metaFile, json_encode($meta, JSON_PRETTY_PRINT))) {
     if (isset($GLOBALS['FORCE_FILE_MODE'])) { @chmod($metaFile, $GLOBALS['FORCE_FILE_MODE']); }
 
+    // Bloque/débloque le téléchargement des exports (PDF, ZIP, ePub…) du projet
+    apply_project_access_rules($type, $slug);
+
     // Regenerate index.php to apply protection immediately
     $indexContent = generate_index_php($type, $slug);
     write_file_atomic($paths['index'], $indexContent);

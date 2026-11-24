@@ -25,6 +25,10 @@ if ($slug === '') {
 }
 
 $paths = project_paths($type, $slug);
+if (!is_dir($paths['dir'])) {
+    echo json_encode(array('ok'=>false,'error'=>'Projet introuvable'));
+    exit;
+}
 
 if (isset($_POST['md'])) {
     $md = (string)$_POST['md'];
@@ -54,7 +58,8 @@ if (!is_file($paths['xml'])) {
 
 libxml_use_internal_errors(true);
 $dom = new DOMDocument();
-if (!$dom->loadXML($xml, LIBXML_NOENT | LIBXML_NOCDATA | LIBXML_NONET)) {
+// Pas de LIBXML_NOENT (entités externes / XXE) : on ne fait que valider le XML
+if (!$dom->loadXML($xml, LIBXML_NOCDATA | LIBXML_NONET)) {
     $errs = libxml_get_errors(); libxml_clear_errors();
     echo json_encode(array('ok'=>false,'error'=>'XML invalide (' . count($errs) . ' erreur(s))'));
     exit;

@@ -2,4 +2,7 @@
 articles/
 tutoriels/
 passwords.txt
-
+passwords.txt.*
+# Données privées générées par l'admin (brouillon d'accueil, anti-bruteforce, sauvegardes)
+*/data/
+*/enable_debug.flag

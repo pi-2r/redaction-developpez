@@ -45,16 +45,30 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
 
 $file = $_FILES['file'];
 $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-$allowed = array('jpg', 'jpeg', 'png', 'gif', 'webp', 'svg');
+// SVG exclu : un SVG peut contenir du JavaScript qui s'exécuterait sur le
+// domaine du site (et donc de l'admin). Pour les schémas, utiliser Mermaid ou un PNG.
+$allowed = array('jpg', 'jpeg', 'png', 'gif', 'webp');
 
-if (!in_array($ext, $allowed)) {
+if (!in_array($ext, $allowed, true)) {
     http_response_code(400);
-    exit('Type de fichier non autorisé (images seulement)');
+    exit('Type de fichier non autorisé (jpg, png, gif, webp)');
+}
+// Vérifie que le contenu est bien une image (et pas un fichier renommé)
+// et que son type réel correspond à l'extension.
+$info = @getimagesize($file['tmp_name']);
+$typeByExt = array('jpg' => IMAGETYPE_JPEG, 'jpeg' => IMAGETYPE_JPEG, 'png' => IMAGETYPE_PNG, 'gif' => IMAGETYPE_GIF,
+    'webp' => defined('IMAGETYPE_WEBP') ? IMAGETYPE_WEBP : -1);
+if ($info === false || empty($info[0]) || empty($info[1]) || $info[2] !== $typeByExt[$ext]) {
+    http_response_code(400);
+    exit('Le fichier n\'est pas une image valide');
 }
 
 // Sanitize filename
-$filename = preg_replace('~[^a-z0-9\-\.]~', '', strtolower($file['name']));
-if (!$filename) $filename = 'image-' . time() . '.' . $ext;
+// Nom = base nettoyée + extension contrôlée (pas de « .php.png », « .htaccess »…)
+$base = preg_replace('~[^a-z0-9\-]+~', '-', strtolower(pathinfo($file['name'], PATHINFO_FILENAME)));
+$base = trim((string)$base, '-');
+if ($base === '') $base = 'image-' . time();
+$filename = $base . '.' . $ext;
 
 $target = $imagesDir . '/' . $filename;
 
